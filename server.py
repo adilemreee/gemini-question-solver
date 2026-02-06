@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,12 +24,13 @@ from config import GEMINI_API_KEY, OUTPUT_DIR, QUESTIONS_DIR
 from src.gemini_client import GeminiClient
 from src.parallel_processor import ParallelProcessor
 from src.report_generator import ReportGenerator
+import database as db
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Gemini Question Solver",
     description="Paralel soru çözme sistemi",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Create directories
@@ -51,11 +52,13 @@ async def home():
 @app.get("/api/status")
 async def api_status():
     """Check API status"""
+    stats = db.get_statistics()
     return {
         "status": "ok",
         "api_key_set": bool(GEMINI_API_KEY),
         "questions_dir": str(QUESTIONS_DIR),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "stats": stats
     }
 
 
@@ -269,6 +272,9 @@ async def process_session(session_id: str):
     try:
         client = GeminiClient()
         
+        # Create database session
+        db.create_session(session_id, source=session.get("source", "web"), total=session["total"])
+        
         # Load images
         images = []
         for file_info in session["files"]:
@@ -286,17 +292,46 @@ async def process_session(session_id: str):
             }
             mime_type = mime_types.get(suffix, "image/jpeg")
             
-            images.append((file_info["filename"], image_bytes, mime_type))
+            images.append((file_info["filename"], file_info["path"], image_bytes, mime_type))
         
         # Process each image
         results = []
-        for i, (filename, image_bytes, mime_type) in enumerate(images):
+        success_count = 0
+        failed_count = 0
+        
+        for i, (filename, image_path, image_bytes, mime_type) in enumerate(images):
             result = await client.solve_question(image_bytes, mime_type, filename)
             results.append(result)
+            
+            # Save to database
+            db.save_question(
+                filename=filename,
+                image_path=image_path,
+                topic=result.get("topic", "Genel"),
+                subtopic=result.get("subtopic"),
+                status="success" if result["success"] else "failed",
+                solution=result.get("solution"),
+                error=result.get("error"),
+                time_taken=result.get("time_taken"),
+                session_id=session_id
+            )
+            
+            if result["success"]:
+                success_count += 1
+            else:
+                failed_count += 1
             
             # Update progress
             session["progress"] = i + 1
             session["results"] = results
+        
+        # Update session in database
+        db.update_session(
+            session_id,
+            success=success_count,
+            failed=failed_count,
+            completed_at=datetime.now().isoformat()
+        )
         
         # Generate report
         generator = ReportGenerator()
@@ -342,6 +377,231 @@ async def get_results(session_id: str):
         "results": session.get("results", []),
         "report_path": session.get("report_path")
     }
+
+
+# ==================== Questions API ====================
+
+@app.get("/api/questions")
+async def list_questions(
+    status: Optional[str] = Query(None, enum=["pending", "success", "failed"]),
+    topic: Optional[str] = None,
+    archived: Optional[bool] = False,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """List all questions with optional filters"""
+    questions = db.get_questions(
+        status=status,
+        topic=topic,
+        archived=archived,
+        limit=limit,
+        offset=offset
+    )
+    return {
+        "count": len(questions),
+        "questions": questions
+    }
+
+
+@app.get("/api/questions/failed")
+async def get_failed_questions():
+    """Get all failed questions for retry"""
+    questions = db.get_failed_questions()
+    return {
+        "count": len(questions),
+        "questions": questions
+    }
+
+
+@app.get("/api/questions/{question_id}")
+async def get_question(question_id: int):
+    """Get single question by ID"""
+    question = db.get_question(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return question
+
+
+@app.post("/api/questions/{question_id}/retry")
+async def retry_question(question_id: int):
+    """Retry a failed question"""
+    question = db.get_question(question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    if question["status"] != "failed":
+        raise HTTPException(status_code=400, detail="Question is not in failed state")
+    
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
+    
+    # Increment retry count
+    retry_count = db.increment_retry(question_id)
+    
+    # Find image file
+    image_path = Path(question.get("image_path", ""))
+    if not image_path.exists():
+        # Try questions folder
+        image_path = QUESTIONS_DIR / question["filename"]
+    
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+    
+    # Solve again
+    client = GeminiClient()
+    image_bytes = image_path.read_bytes()
+    
+    suffix = image_path.suffix.lower()
+    mime_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
+    }
+    mime_type = mime_types.get(suffix, "image/jpeg")
+    
+    result = await client.solve_question(image_bytes, mime_type, question["filename"])
+    
+    # Update in database
+    db.update_question(
+        question_id,
+        status="success" if result["success"] else "failed",
+        solution=result.get("solution"),
+        error=result.get("error"),
+        time_taken=result.get("time_taken"),
+        topic=result.get("topic", "Genel"),
+        subtopic=result.get("subtopic"),
+        solved_at=datetime.now().isoformat() if result["success"] else None
+    )
+    
+    return {
+        "success": result["success"],
+        "retry_count": retry_count,
+        "result": result
+    }
+
+
+@app.post("/api/questions/retry-all-failed")
+async def retry_all_failed():
+    """Retry all failed questions"""
+    failed = db.get_failed_questions()
+    
+    if not failed:
+        return {"message": "No failed questions to retry", "count": 0}
+    
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
+    
+    # Create a session for batch retry
+    session_id = str(uuid.uuid4())
+    files = []
+    
+    for q in failed:
+        image_path = Path(q.get("image_path", ""))
+        if not image_path.exists():
+            image_path = QUESTIONS_DIR / q["filename"]
+        
+        if image_path.exists():
+            files.append({
+                "filename": q["filename"],
+                "path": str(image_path),
+                "question_id": q["id"]
+            })
+    
+    if not files:
+        raise HTTPException(status_code=400, detail="No image files found for retry")
+    
+    active_sessions[session_id] = {
+        "status": "processing",
+        "files": files,
+        "results": [],
+        "progress": 0,
+        "total": len(files),
+        "source": "retry",
+        "created_at": datetime.now().isoformat()
+    }
+    
+    # Start processing
+    asyncio.create_task(process_retry_session(session_id))
+    
+    return {
+        "session_id": session_id,
+        "count": len(files),
+        "message": f"Retrying {len(files)} failed questions"
+    }
+
+
+async def process_retry_session(session_id: str):
+    """Process retry session"""
+    session = active_sessions[session_id]
+    
+    try:
+        client = GeminiClient()
+        results = []
+        
+        for i, file_info in enumerate(session["files"]):
+            file_path = Path(file_info["path"])
+            image_bytes = file_path.read_bytes()
+            
+            suffix = file_path.suffix.lower()
+            mime_types = {
+                ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
+            }
+            mime_type = mime_types.get(suffix, "image/jpeg")
+            
+            result = await client.solve_question(image_bytes, mime_type, file_info["filename"])
+            results.append(result)
+            
+            # Update database
+            if "question_id" in file_info:
+                db.update_question(
+                    file_info["question_id"],
+                    status="success" if result["success"] else "failed",
+                    solution=result.get("solution"),
+                    error=result.get("error"),
+                    time_taken=result.get("time_taken"),
+                    topic=result.get("topic", "Genel"),
+                    retry_count=db.increment_retry(file_info["question_id"])
+                )
+            
+            session["progress"] = i + 1
+            session["results"] = results
+        
+        session["status"] = "completed"
+        
+    except Exception as e:
+        session["status"] = "error"
+        session["error"] = str(e)
+
+
+@app.post("/api/questions/archive")
+async def archive_questions(
+    question_ids: Optional[List[int]] = None,
+    archive_successful: bool = False
+):
+    """Archive questions by IDs or all successful ones"""
+    if question_ids:
+        count = db.archive_questions(question_ids=question_ids)
+    elif archive_successful:
+        count = db.archive_questions(status="success")
+    else:
+        raise HTTPException(status_code=400, detail="Provide question_ids or set archive_successful=true")
+    
+    return {
+        "message": f"Archived {count} questions",
+        "count": count
+    }
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """Get overall statistics"""
+    return db.get_statistics()
+
+
+@app.get("/api/topics")
+async def get_topics():
+    """Get all available topics"""
+    return db.get_topics()
 
 
 # Mount static files for web assets

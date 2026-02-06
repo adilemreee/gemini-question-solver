@@ -225,6 +225,35 @@
         .report-content strong { color: var(--text-primary); }
         .report-content img { max-width: 100%; border-radius: var(--radius-md); margin: 16px 0; }
 
+        /* Stats Bar */
+        .stats-bar { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+        .stat-item { flex: 1; min-width: 100px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; text-align: center; }
+        .stat-item.success { border-color: var(--success); background: rgba(34, 197, 94, 0.1); }
+        .stat-item.failed { border-color: var(--error); background: rgba(239, 68, 68, 0.1); }
+        .stat-value { display: block; font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+        .stat-item.success .stat-value { color: var(--success); }
+        .stat-item.failed .stat-value { color: var(--error); }
+        .stat-label { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* Filter Bar */
+        .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+        .filter-bar select { padding: 10px 16px; border-radius: var(--radius-md); background: var(--bg-glass); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 0.9rem; cursor: pointer; }
+        .filter-bar select:focus { outline: none; border-color: var(--accent-primary); }
+
+        /* History Item */
+        .history-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: 12px; transition: all 0.2s ease; }
+        .history-item:hover { border-color: var(--accent-primary); }
+        .history-item.success { border-left: 4px solid var(--success); }
+        .history-item.failed { border-left: 4px solid var(--error); }
+        .history-item-info { display: flex; align-items: center; gap: 16px; flex: 1; }
+        .history-item-icon { font-size: 2rem; }
+        .history-item-details { flex: 1; }
+        .history-item-name { font-weight: 600; margin-bottom: 4px; }
+        .history-item-meta { font-size: 0.8rem; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
+        .history-item-meta .topic { background: var(--accent-gradient); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; }
+        .history-item-actions { display: flex; gap: 8px; }
+        .history-item-actions .btn { padding: 8px 14px; font-size: 0.85rem; }
+
         @media (max-width: 768px) {
             .container { padding: 24px 16px; }
             .header h1 { font-size: 1.75rem; }
@@ -260,6 +289,9 @@
             </button>
             <button class="mode-tab" id="tabReports" onclick="switchMode('reports')">
                 📄 Raporlar
+            </button>
+            <button class="mode-tab" id="tabHistory" onclick="switchMode('history')">
+                📚 Geçmiş
             </button>
         </div>
 
@@ -341,6 +373,53 @@
             </div>
         </div>
 
+        <!-- History Mode -->
+        <div id="modeHistory" style="display: none;">
+            <div class="folder-section">
+                <!-- Stats Bar -->
+                <div class="stats-bar" id="statsBar">
+                    <div class="stat-item">
+                        <span class="stat-value" id="statTotal">0</span>
+                        <span class="stat-label">Toplam</span>
+                    </div>
+                    <div class="stat-item success">
+                        <span class="stat-value" id="statSuccess">0</span>
+                        <span class="stat-label">Başarılı</span>
+                    </div>
+                    <div class="stat-item failed">
+                        <span class="stat-value" id="statFailed">0</span>
+                        <span class="stat-label">Başarısız</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="statRate">0%</span>
+                        <span class="stat-label">Başarı</span>
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <select id="filterStatus" onchange="loadHistory()">
+                        <option value="">Tüm Durumlar</option>
+                        <option value="success">✅ Başarılı</option>
+                        <option value="failed">❌ Başarısız</option>
+                    </select>
+                    <select id="filterTopic" onchange="loadHistory()">
+                        <option value="">Tüm Konular</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="loadHistory()">🔄 Yenile</button>
+                    <button class="btn btn-primary" id="retryAllBtn" onclick="retryAllFailed()">🔄 Tümünü Tekrar Dene</button>
+                    <button class="btn btn-secondary" onclick="archiveSuccessful()">📦 Başarılıları Arşivle</button>
+                </div>
+
+                <!-- Questions List -->
+                <div id="historyList"></div>
+                <div class="empty-state" id="emptyHistory" style="display: none;">
+                    <div class="icon">📭</div>
+                    <div>Henüz soru çözülmemiş</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Progress Section -->
         <div class="progress-section" id="progressSection">
             <div class="progress-header">
@@ -394,13 +473,18 @@
             document.getElementById('tabFolder').classList.toggle('active', mode === 'folder');
             document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
             document.getElementById('tabReports').classList.toggle('active', mode === 'reports');
+            document.getElementById('tabHistory').classList.toggle('active', mode === 'history');
             document.getElementById('modeFolder').style.display = mode === 'folder' ? 'block' : 'none';
             document.getElementById('modeUpload').style.display = mode === 'upload' ? 'block' : 'none';
             document.getElementById('modeReports').style.display = mode === 'reports' ? 'block' : 'none';
+            document.getElementById('modeHistory').style.display = mode === 'history' ? 'block' : 'none';
             
-            // Load reports when switching to reports tab
+            // Load data when switching tabs
             if (mode === 'reports') {
                 loadReports();
+            } else if (mode === 'history') {
+                loadHistory();
+                loadTopics();
             }
             
             // Reset results
@@ -798,9 +882,222 @@
             currentReportFilename = null;
         }
 
+        // ==================== History Functions ====================
+
+        async function loadTopics() {
+            try {
+                const response = await fetch('/api/topics');
+                const topics = await response.json();
+                
+                const filterTopic = document.getElementById('filterTopic');
+                filterTopic.innerHTML = '<option value="">Tüm Konular</option>';
+                
+                topics.forEach(topic => {
+                    const option = document.createElement('option');
+                    option.value = topic.name;
+                    option.textContent = `${topic.icon} ${topic.name}`;
+                    filterTopic.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading topics:', error);
+            }
+        }
+
+        async function loadHistory() {
+            const historyList = document.getElementById('historyList');
+            const emptyHistory = document.getElementById('emptyHistory');
+            const filterStatus = document.getElementById('filterStatus').value;
+            const filterTopic = document.getElementById('filterTopic').value;
+            
+            historyList.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Sorular yükleniyor...</div>';
+            emptyHistory.style.display = 'none';
+            
+            try {
+                // Load stats
+                const statsRes = await fetch('/api/stats');
+                const stats = await statsRes.json();
+                
+                document.getElementById('statTotal').textContent = stats.total;
+                document.getElementById('statSuccess').textContent = stats.success;
+                document.getElementById('statFailed').textContent = stats.failed;
+                document.getElementById('statRate').textContent = stats.success_rate + '%';
+                
+                // Show/hide retry button based on failed count
+                document.getElementById('retryAllBtn').style.display = stats.failed > 0 ? 'flex' : 'none';
+                
+                // Load questions
+                let url = '/api/questions?archived=false';
+                if (filterStatus) url += `&status=${filterStatus}`;
+                if (filterTopic) url += `&topic=${encodeURIComponent(filterTopic)}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.questions.length === 0) {
+                    historyList.innerHTML = '';
+                    emptyHistory.style.display = 'block';
+                } else {
+                    emptyHistory.style.display = 'none';
+                    historyList.innerHTML = data.questions.map(q => {
+                        const date = new Date(q.created_at);
+                        const dateStr = date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                        const statusIcon = q.status === 'success' ? '✅' : '❌';
+                        const statusClass = q.status === 'success' ? 'success' : 'failed';
+                        const timeStr = q.time_taken ? `${q.time_taken.toFixed(1)}s` : '-';
+                        
+                        return `
+                            <div class="history-item ${statusClass}">
+                                <div class="history-item-info">
+                                    <span class="history-item-icon">${statusIcon}</span>
+                                    <div class="history-item-details">
+                                        <div class="history-item-name">${q.filename}</div>
+                                        <div class="history-item-meta">
+                                            <span class="topic">${q.topic || 'Genel'}</span>
+                                            <span>⏱️ ${timeStr}</span>
+                                            <span>📅 ${dateStr}</span>
+                                            ${q.retry_count > 0 ? `<span>🔄 ${q.retry_count}x tekrar</span>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="history-item-actions">
+                                    ${q.status === 'failed' ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ''}
+                                    <button class="btn btn-secondary" onclick="viewQuestion(${q.id})">👁️ Görüntüle</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } catch (error) {
+                historyList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Sorular yüklenemedi</div>';
+            }
+        }
+
+        async function retryQuestion(questionId) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div>';
+            
+            try {
+                const response = await fetch(`/api/questions/${questionId}/retry`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Soru başarıyla çözüldü!');
+                } else {
+                    alert('❌ Soru tekrar başarısız oldu: ' + (data.result?.error || 'Bilinmeyen hata'));
+                }
+                
+                loadHistory();
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Tekrar';
+            }
+        }
+
+        async function retryAllFailed() {
+            if (!confirm('Tüm başarısız soruları tekrar çözmek istediğinize emin misiniz?')) return;
+            
+            const btn = document.getElementById('retryAllBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Çözülüyor...';
+            
+            try {
+                const response = await fetch('/api/questions/retry-all-failed', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    alert(`🔄 ${data.count} soru tekrar çözülüyor...`);
+                    
+                    // Poll for progress
+                    const pollRetry = setInterval(async () => {
+                        const progressRes = await fetch(`/api/progress/${sessionId}`);
+                        const progress = await progressRes.json();
+                        
+                        if (progress.status === 'completed') {
+                            clearInterval(pollRetry);
+                            alert('✅ Tüm sorular işlendi!');
+                            loadHistory();
+                            btn.disabled = false;
+                            btn.innerHTML = '🔄 Tümünü Tekrar Dene';
+                        } else if (progress.status === 'error') {
+                            clearInterval(pollRetry);
+                            alert('❌ Hata: ' + progress.error);
+                            btn.disabled = false;
+                            btn.innerHTML = '🔄 Tümünü Tekrar Dene';
+                        }
+                    }, 2000);
+                }
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Tümünü Tekrar Dene';
+            }
+        }
+
+        async function archiveSuccessful() {
+            if (!confirm('Tüm başarılı soruları arşivlemek istediğinize emin misiniz?')) return;
+            
+            try {
+                const response = await fetch('/api/questions/archive?archive_successful=true', { method: 'POST' });
+                const data = await response.json();
+                
+                alert(`📦 ${data.count} soru arşivlendi!`);
+                loadHistory();
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+            }
+        }
+
+        async function viewQuestion(questionId) {
+            try {
+                const response = await fetch(`/api/questions/${questionId}`);
+                const q = await response.json();
+                
+                const viewer = document.getElementById('reportViewer');
+                const title = document.getElementById('reportTitle');
+                const content = document.getElementById('reportContent');
+                
+                title.textContent = `📷 ${q.filename}`;
+                
+                let html = `
+                    <div style="margin-bottom: 16px;">
+                        <strong>Konu:</strong> ${q.topic || 'Genel'}<br>
+                        <strong>Durum:</strong> ${q.status === 'success' ? '✅ Başarılı' : '❌ Başarısız'}<br>
+                        <strong>Süre:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + 's' : '-'}<br>
+                        ${q.retry_count > 0 ? `<strong>Tekrar Sayısı:</strong> ${q.retry_count}<br>` : ''}
+                    </div>
+                    <hr>
+                `;
+                
+                if (q.solution) {
+                    html += `<div class="solution">${formatSolution(q.solution)}</div>`;
+                } else if (q.error) {
+                    html += `<div style="color: var(--error);">❌ Hata: ${q.error}</div>`;
+                }
+                
+                content.innerHTML = html;
+                viewer.style.display = 'block';
+                
+                // Render math
+                setTimeout(renderMathInReport, 100);
+            } catch (error) {
+                alert('❌ Soru yüklenemedi: ' + error.message);
+            }
+        }
+
+        function formatSolution(text) {
+            if (!text) return '';
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+        }
+
         // Initialize
         checkStatus();
         scanFolder();
     </script>
 </body>
 </html>
+
