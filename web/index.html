@@ -140,6 +140,7 @@
             transition: all 0.2s ease;
         }
         .file-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
+        .file-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
         .file-card img { width: 100%; height: 100px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
         .file-card .filename { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-card .status-icon { font-size: 1.5rem; margin-top: 4px; }
@@ -205,8 +206,35 @@
         .report-item-name { font-weight: 600; }
         .report-item-meta { font-size: 0.8rem; color: var(--text-secondary); }
         
-        /* Report Viewer */
-        .report-viewer { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-xl); margin-top: 24px; overflow: hidden; }
+        .backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 999;
+            backdrop-filter: blur(4px);
+            display: none;
+        }
+        
+        /* Report Viewer (Modal) */
+        .report-viewer { 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            width: 80%; 
+            max-width: 900px; 
+            max-height: 90vh; 
+            background: #1a1a24; 
+            border: 1px solid var(--border-color); 
+            border-radius: var(--radius-xl); 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
+            z-index: 1000; 
+            display: flex; 
+            flex-direction: column; 
+        }
         .report-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
         .report-header h3 { font-size: 1.1rem; }
         .report-actions { display: flex; gap: 8px; }
@@ -360,17 +388,21 @@
                     <div>Henüz rapor oluşturulmamış</div>
                 </div>
             </div>
-            <!-- Report Viewer -->
-            <div class="report-viewer" id="reportViewer" style="display: none;">
-                <div class="report-header">
-                    <h3 id="reportTitle">📄 Rapor</h3>
-                    <div class="report-actions">
-                        <button class="btn btn-secondary" onclick="downloadReport()">⬇️ İndir</button>
-                        <button class="btn btn-secondary" onclick="closeReport()">✕ Kapat</button>
-                    </div>
+        </div>
+
+        <!-- Backdrop -->
+        <div class="backdrop" id="backdrop" onclick="closeReport()"></div>
+
+        <!-- Report Viewer (Global) -->
+        <div class="report-viewer" id="reportViewer" style="display: none;">
+            <div class="report-header">
+                <h3 id="reportTitle">📄 Rapor</h3>
+                <div class="report-actions">
+                    <button class="btn btn-secondary" onclick="downloadReport()">⬇️ İndir</button>
+                    <button class="btn btn-secondary" onclick="closeReport()">✕ Kapat</button>
                 </div>
-                <div class="report-content" id="reportContent"></div>
             </div>
+            <div class="report-content" id="reportContent"></div>
         </div>
 
         <!-- History Mode -->
@@ -819,11 +851,15 @@
             const reportViewer = document.getElementById('reportViewer');
             const reportTitle = document.getElementById('reportTitle');
             const reportContent = document.getElementById('reportContent');
+            const backdrop = document.getElementById('backdrop');
             
             currentReportFilename = filename;
             reportTitle.textContent = '📄 ' + filename;
             reportContent.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div> Rapor yükleniyor...</div>';
-            reportViewer.style.display = 'block';
+            
+            // Show modal and backdrop
+            reportViewer.style.display = 'flex'; // Changed to flex for the column layout
+            backdrop.style.display = 'block';
             
             try {
                 const response = await fetch(`/api/report/${encodeURIComponent(filename)}`);
@@ -880,6 +916,7 @@
 
         function closeReport() {
             document.getElementById('reportViewer').style.display = 'none';
+            document.getElementById('backdrop').style.display = 'none';
             currentReportFilename = null;
         }
 
@@ -924,7 +961,10 @@
                 document.getElementById('statRate').textContent = stats.success_rate + '%';
                 
                 // Show/hide retry button based on failed count
-                document.getElementById('retryAllBtn').style.display = stats.failed > 0 ? 'inline-block' : 'none';
+                const retryBtn = document.getElementById('retryAllBtn');
+                if (retryBtn) {
+                     retryBtn.style.display = stats.failed > 0 ? 'inline-block' : 'none';
+                }
                 
                 // Load questions
                 let url = '/api/questions?archived=false';
@@ -1058,10 +1098,8 @@
             try {
                 const response = await fetch(`/api/questions/${questionId}`, { method: 'DELETE' });
                 if (response.ok) {
-                    // Remove from UI immediately for better feel
                     const el = document.getElementById(`question-${questionId}`);
                     if (el) el.remove();
-                    // Reload to update stats
                     loadHistory();
                 } else {
                     alert('❌ Silinemedi');
@@ -1090,13 +1128,8 @@
                 const response = await fetch(`/api/questions/${questionId}`);
                 const q = await response.json();
                 
-                // Switch to report viewer if hidden
                 const viewer = document.getElementById('reportViewer');
-                viewer.style.display = 'block';
-                
-                // Scroll to viewer
-                viewer.scrollIntoView({ behavior: 'smooth' });
-                
+                const backdrop = document.getElementById('backdrop');
                 const title = document.getElementById('reportTitle');
                 const content = document.getElementById('reportContent');
                 
@@ -1122,19 +1155,13 @@
                 
                 content.innerHTML = html;
                 
+                // Show modal and backdrop
+                viewer.style.display = 'flex';
+                backdrop.style.display = 'block';
+                
                 // Render math
                 setTimeout(() => {
-                    if (typeof renderMathInElement !== 'undefined') {
-                        renderMathInElement(content, {
-                            delimiters: [
-                                {left: '$$', right: '$$', display: true},
-                                {left: '$', right: '$', display: false},
-                                {left: '\\[', right: '\\]', display: true},
-                                {left: '\\(', right: '\\)', display: false}
-                            ],
-                            throwOnError: false
-                        });
-                    }
+                    renderMathInReport();
                 }, 100);
                 
             } catch (error) {

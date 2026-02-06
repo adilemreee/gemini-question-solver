@@ -9,8 +9,9 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from pydantic import BaseModel
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Query, Body
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
