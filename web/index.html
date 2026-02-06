@@ -409,6 +409,7 @@
                     <button class="btn btn-secondary" onclick="loadHistory()">🔄 Yenile</button>
                     <button class="btn btn-primary" id="retryAllBtn" onclick="retryAllFailed()">🔄 Tümünü Tekrar Dene</button>
                     <button class="btn btn-secondary" onclick="archiveSuccessful()">📦 Başarılıları Arşivle</button>
+                    <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteAllQuestions()">🗑️ Tümünü Sil</button>
                 </div>
 
                 <!-- Questions List -->
@@ -923,7 +924,7 @@
                 document.getElementById('statRate').textContent = stats.success_rate + '%';
                 
                 // Show/hide retry button based on failed count
-                document.getElementById('retryAllBtn').style.display = stats.failed > 0 ? 'flex' : 'none';
+                document.getElementById('retryAllBtn').style.display = stats.failed > 0 ? 'inline-block' : 'none';
                 
                 // Load questions
                 let url = '/api/questions?archived=false';
@@ -946,7 +947,7 @@
                         const timeStr = q.time_taken ? `${q.time_taken.toFixed(1)}s` : '-';
                         
                         return `
-                            <div class="history-item ${statusClass}">
+                            <div class="history-item ${statusClass}" id="question-${q.id}">
                                 <div class="history-item-info">
                                     <span class="history-item-icon">${statusIcon}</span>
                                     <div class="history-item-details">
@@ -962,6 +963,7 @@
                                 <div class="history-item-actions">
                                     ${q.status === 'failed' ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ''}
                                     <button class="btn btn-secondary" onclick="viewQuestion(${q.id})">👁️ Görüntüle</button>
+                                    <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteQuestion(${q.id})">🗑️ Sil</button>
                                 </div>
                             </div>
                         `;
@@ -1050,39 +1052,93 @@
             }
         }
 
+        async function deleteQuestion(questionId) {
+            if (!confirm('Bu soruyu silmek istediğinize emin misiniz?')) return;
+            
+            try {
+                const response = await fetch(`/api/questions/${questionId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    // Remove from UI immediately for better feel
+                    const el = document.getElementById(`question-${questionId}`);
+                    if (el) el.remove();
+                    // Reload to update stats
+                    loadHistory();
+                } else {
+                    alert('❌ Silinemedi');
+                }
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+            }
+        }
+
+        async function deleteAllQuestions() {
+            if (!confirm('TÜM SORULARI silmek istediğinize emin misiniz? Bu işlem geri alınamaz!')) return;
+            
+            try {
+                const response = await fetch('/api/questions?all_questions=true', { method: 'DELETE' });
+                const data = await response.json();
+                
+                alert(`🗑️ ${data.count} soru silindi!`);
+                loadHistory();
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+            }
+        }
+
         async function viewQuestion(questionId) {
             try {
                 const response = await fetch(`/api/questions/${questionId}`);
                 const q = await response.json();
                 
+                // Switch to report viewer if hidden
                 const viewer = document.getElementById('reportViewer');
+                viewer.style.display = 'block';
+                
+                // Scroll to viewer
+                viewer.scrollIntoView({ behavior: 'smooth' });
+                
                 const title = document.getElementById('reportTitle');
                 const content = document.getElementById('reportContent');
                 
                 title.textContent = `📷 ${q.filename}`;
                 
                 let html = `
-                    <div style="margin-bottom: 16px;">
-                        <strong>Konu:</strong> ${q.topic || 'Genel'}<br>
-                        <strong>Durum:</strong> ${q.status === 'success' ? '✅ Başarılı' : '❌ Başarısız'}<br>
-                        <strong>Süre:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + 's' : '-'}<br>
-                        ${q.retry_count > 0 ? `<strong>Tekrar Sayısı:</strong> ${q.retry_count}<br>` : ''}
+                    <div style="margin-bottom: 24px; background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px;">
+                        <img src="/api/image/${encodeURIComponent(q.filename)}" style="max-height: 200px; display: block; margin: 0 auto 16px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>Konu:</strong> ${q.topic || 'Genel'}</div>
+                            <div><strong>Durum:</strong> ${q.status === 'success' ? '✅ Başarılı' : '❌ Başarısız'}</div>
+                            <div><strong>Süre:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + 's' : '-'}</div>
+                            <div><strong>Tarih:</strong> ${new Date(q.created_at).toLocaleString('tr-TR')}</div>
+                        </div>
                     </div>
-                    <hr>
                 `;
                 
                 if (q.solution) {
                     html += `<div class="solution">${formatSolution(q.solution)}</div>`;
                 } else if (q.error) {
-                    html += `<div style="color: var(--error);">❌ Hata: ${q.error}</div>`;
+                    html += `<div style="color: var(--error); padding: 16px; border: 1px solid var(--error); border-radius: 8px; background: rgba(239, 68, 68, 0.1);">❌ Hata: ${q.error}</div>`;
                 }
                 
                 content.innerHTML = html;
-                viewer.style.display = 'block';
                 
                 // Render math
-                setTimeout(renderMathInReport, 100);
+                setTimeout(() => {
+                    if (typeof renderMathInElement !== 'undefined') {
+                        renderMathInElement(content, {
+                            delimiters: [
+                                {left: '$$', right: '$$', display: true},
+                                {left: '$', right: '$', display: false},
+                                {left: '\\[', right: '\\]', display: true},
+                                {left: '\\(', right: '\\)', display: false}
+                            ],
+                            throwOnError: false
+                        });
+                    }
+                }, 100);
+                
             } catch (error) {
+                console.error(error);
                 alert('❌ Soru yüklenemedi: ' + error.message);
             }
         }

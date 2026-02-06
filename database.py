@@ -236,6 +236,39 @@ def increment_retry(question_id: int) -> int:
     return row['retry_count'] if row else 0
 
 
+def delete_question(question_id: int) -> bool:
+    """Delete a single question by ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count > 0
+
+
+def delete_questions(question_ids: List[int] = None, status: str = None, all_questions: bool = False) -> int:
+    """Delete multiple questions by IDs, status, or all"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if question_ids:
+        placeholders = ",".join("?" * len(question_ids))
+        cursor.execute(f"DELETE FROM questions WHERE id IN ({placeholders})", question_ids)
+    elif status:
+        cursor.execute("DELETE FROM questions WHERE status = ?", (status,))
+    elif all_questions:
+        cursor.execute("DELETE FROM questions")
+    else:
+        conn.close()
+        return 0
+    
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
 # ==================== Sessions ====================
 
 def create_session(session_id: str, source: str = "web", total: int = 0) -> str:

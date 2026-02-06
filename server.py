@@ -604,6 +604,40 @@ async def get_topics():
     return db.get_topics()
 
 
+@app.delete("/api/questions/{question_id}")
+async def delete_question(question_id: int):
+    """Delete a single question by ID"""
+    success = db.delete_question(question_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return {"message": "Question deleted", "id": question_id}
+
+
+@app.delete("/api/questions")
+async def delete_questions(
+    question_ids: Optional[List[int]] = None,
+    status: Optional[str] = Query(None, enum=["success", "failed"]),
+    all_questions: bool = False
+):
+    """Delete multiple questions"""
+    if not question_ids and not status and not all_questions:
+        raise HTTPException(
+            status_code=400, 
+            detail="Provide question_ids, status, or set all_questions=true"
+        )
+    
+    count = db.delete_questions(
+        question_ids=question_ids,
+        status=status,
+        all_questions=all_questions
+    )
+    
+    return {
+        "message": f"Deleted {count} questions",
+        "count": count
+    }
+
+
 # Mount static files for web assets
 web_dir = Path(__file__).parent / "web"
 if web_dir.exists():
