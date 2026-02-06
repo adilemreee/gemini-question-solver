@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Gemini Question Solver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- KaTeX for LaTeX math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --bg-glass: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --text-muted: rgba(255, 255, 255, 0.4);
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            --success: #22c55e;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --shadow-glow: 0 0 60px rgba(99, 102, 241, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .bg-decoration {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; z-index: 0;
+        }
+        .bg-decoration::before {
+            content: '';
+            position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 30% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-2%, -2%) rotate(1deg); }
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; position: relative; z-index: 1; }
+
+        .header { text-align: center; margin-bottom: 48px; }
+        .header h1 {
+            font-size: 2.5rem; font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; margin-bottom: 12px;
+        }
+        .header p { color: var(--text-secondary); font-size: 1.1rem; }
+
+        .status-bar {
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            margin-bottom: 32px; padding: 12px 24px;
+            background: var(--bg-glass); border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg); backdrop-filter: blur(10px);
+        }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); animation: pulse 2s infinite; }
+        .status-dot.error { background: var(--error); animation: none; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Mode Tabs */
+        .mode-tabs {
+            display: flex; gap: 8px; margin-bottom: 24px;
+            background: var(--bg-card); padding: 8px;
+            border-radius: var(--radius-lg); border: 1px solid var(--border-color);
+        }
+        .mode-tab {
+            flex: 1; padding: 14px 24px; border: none; border-radius: var(--radius-md);
+            font-size: 1rem; font-weight: 600; cursor: pointer;
+            background: transparent; color: var(--text-secondary);
+            transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .mode-tab:hover { background: var(--bg-glass); color: var(--text-primary); }
+        .mode-tab.active {
+            background: var(--accent-gradient); color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Folder Section */
+        .folder-section {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl); padding: 32px; margin-bottom: 32px;
+        }
+        .folder-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; flex-wrap: wrap; gap: 16px;
+        }
+        .folder-info { display: flex; align-items: center; gap: 12px; }
+        .folder-icon { font-size: 2rem; }
+        .folder-path {
+            font-family: monospace; font-size: 0.85rem; color: var(--text-secondary);
+            background: var(--bg-glass); padding: 8px 16px; border-radius: var(--radius-sm);
+        }
+        .folder-actions { display: flex; gap: 12px; }
+
+        /* Upload zone */
+        .upload-zone {
+            background: var(--bg-card); border: 2px dashed var(--border-color);
+            border-radius: var(--radius-xl); padding: 60px 40px; text-align: center;
+            transition: all 0.3s ease; cursor: pointer; margin-bottom: 32px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent-primary);
+            background: rgba(99, 102, 241, 0.05);
+            box-shadow: var(--shadow-glow);
+        }
+        .upload-zone.has-files { border-style: solid; border-color: var(--success); background: rgba(34, 197, 94, 0.05); }
+        .upload-icon { font-size: 4rem; margin-bottom: 20px; }
+        .upload-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; }
+        .upload-subtitle { color: var(--text-secondary); font-size: 0.9rem; }
+
+        /* File preview grid */
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; margin-bottom: 32px; }
+        .file-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: var(--radius-md); padding: 12px; text-align: center;
+            transition: all 0.2s ease;
+        }
+        .file-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
+        .file-card img { width: 100%; height: 100px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
+        .file-card .filename { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-card .status-icon { font-size: 1.5rem; margin-top: 4px; }
+
+        /* Empty state */
+        .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
+
+        /* Actions */
+        .actions { display: flex; gap: 16px; justify-content: center; margin-bottom: 48px; }
+        .btn {
+            padding: 14px 32px; border: none; border-radius: var(--radius-md);
+            font-size: 1rem; font-weight: 600; cursor: pointer;
+            transition: all 0.2s ease; display: flex; align-items: center; gap: 8px;
+        }
+        .btn-primary { background: var(--accent-gradient); color: white; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: var(--bg-glass); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--bg-card); }
+
+        /* Progress section */
+        .progress-section { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-xl); padding: 32px; margin-bottom: 32px; display: none; }
+        .progress-section.active { display: block; }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .progress-title { font-size: 1.25rem; font-weight: 600; }
+        .progress-stats { color: var(--text-secondary); }
+        .progress-bar-container { background: rgba(255, 255, 255, 0.1); border-radius: var(--radius-sm); height: 8px; overflow: hidden; margin-bottom: 24px; }
+        .progress-bar { height: 100%; background: var(--accent-gradient); border-radius: var(--radius-sm); transition: width 0.3s ease; width: 0%; }
+
+        /* Results section */
+        .results-section { display: none; }
+        .results-section.active { display: block; }
+        .result-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; transition: all 0.2s ease; }
+        .result-card:hover { border-color: var(--accent-primary); }
+        .result-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+        .result-image { width: 80px; height: 80px; object-fit: cover; border-radius: var(--radius-md); }
+        .result-info h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
+        .result-info .meta { color: var(--text-secondary); font-size: 0.85rem; }
+        .result-solution { background: rgba(255, 255, 255, 0.02); border-radius: var(--radius-md); padding: 20px; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7; color: var(--text-secondary); }
+        .result-solution strong { color: var(--text-primary); }
+
+        /* KaTeX Math Styling */
+        .result-solution .katex { font-size: 1.1em; color: var(--text-primary); }
+        .result-solution .katex-display { margin: 16px 0; padding: 16px; background: rgba(99, 102, 241, 0.1); border-radius: var(--radius-sm); border-left: 3px solid var(--accent-primary); overflow-x: auto; }
+        .result-solution .katex-display > .katex { text-align: left; }
+
+        /* Completion banner */
+        .completion-banner { background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: var(--radius-xl); padding: 32px; text-align: center; margin-bottom: 32px; display: none; }
+        .completion-banner.active { display: block; }
+        .completion-banner h2 { color: var(--success); font-size: 1.5rem; margin-bottom: 8px; }
+        .completion-banner p { color: var(--text-secondary); }
+
+        #fileInput { display: none; }
+        .spinner { width: 20px; height: 20px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Report List */
+        .report-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: 12px; cursor: pointer; transition: all 0.2s ease; }
+        .report-item:hover { border-color: var(--accent-primary); transform: translateX(4px); }
+        .report-item-info { display: flex; align-items: center; gap: 12px; }
+        .report-item-icon { font-size: 1.5rem; }
+        .report-item-name { font-weight: 600; }
+        .report-item-meta { font-size: 0.8rem; color: var(--text-secondary); }
+        
+        /* Report Viewer */
+        .report-viewer { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-xl); margin-top: 24px; overflow: hidden; }
+        .report-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
+        .report-header h3 { font-size: 1.1rem; }
+        .report-actions { display: flex; gap: 8px; }
+        .report-actions .btn { padding: 8px 16px; font-size: 0.85rem; }
+        .report-content { padding: 24px; max-height: 600px; overflow-y: auto; line-height: 1.8; }
+        .report-content h1, .report-content h2, .report-content h3 { color: var(--text-primary); margin: 20px 0 12px 0; }
+        .report-content h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+        .report-content h2 { font-size: 1.25rem; }
+        .report-content h3 { font-size: 1.1rem; }
+        .report-content p { margin-bottom: 12px; color: var(--text-secondary); }
+        .report-content code { background: var(--bg-glass); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        .report-content pre { background: var(--bg-glass); padding: 16px; border-radius: var(--radius-md); overflow-x: auto; margin: 16px 0; }
+        .report-content ul, .report-content ol { margin-left: 24px; margin-bottom: 12px; }
+        .report-content li { margin-bottom: 4px; color: var(--text-secondary); }
+        .report-content hr { border: none; border-top: 1px solid var(--border-color); margin: 24px 0; }
+        .report-content strong { color: var(--text-primary); }
+        .report-content img { max-width: 100%; border-radius: var(--radius-md); margin: 16px 0; }
+
+        @media (max-width: 768px) {
+            .container { padding: 24px 16px; }
+            .header h1 { font-size: 1.75rem; }
+            .upload-zone { padding: 40px 20px; }
+            .file-grid { grid-template-columns: repeat(2, 1fr); }
+            .actions, .folder-actions { flex-direction: column; }
+            .btn { width: 100%; justify-content: center; }
+            .mode-tabs { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-decoration"></div>
+    
+    <div class="container">
+        <header class="header">
+            <h1>🧠 Gemini Question Solver</h1>
+            <p>Soru fotoğraflarını yükle veya klasörden tara, paralel olarak çöz</p>
+        </header>
+
+        <div class="status-bar">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">API bağlantısı kontrol ediliyor...</span>
+        </div>
+
+        <!-- Mode Tabs -->
+        <div class="mode-tabs">
+            <button class="mode-tab active" id="tabFolder" onclick="switchMode('folder')">
+                📁 Klasörden Tara
+            </button>
+            <button class="mode-tab" id="tabUpload" onclick="switchMode('upload')">
+                📤 Dosya Yükle
+            </button>
+            <button class="mode-tab" id="tabReports" onclick="switchMode('reports')">
+                📄 Raporlar
+            </button>
+        </div>
+
+        <!-- Folder Mode -->
+        <div id="modeFolder">
+            <div class="folder-section">
+                <div class="folder-header">
+                    <div class="folder-info">
+                        <span class="folder-icon">📂</span>
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Questions Klasörü</div>
+                            <code class="folder-path" id="folderPath">Yükleniyor...</code>
+                        </div>
+                    </div>
+                    <div class="folder-actions">
+                        <button class="btn btn-secondary" onclick="scanFolder()">🔄 Yenile</button>
+                        <button class="btn btn-primary" id="solveFolderBtn" onclick="solveFromFolder()">
+                            🚀 Soruları Çöz
+                        </button>
+                    </div>
+                </div>
+                <div class="file-grid" id="folderFileGrid"></div>
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <div class="icon">📭</div>
+                    <div>Klasörde soru fotoğrafı bulunamadı</div>
+                    <div style="font-size: 0.85rem; margin-top: 8px;">
+                        questions/ klasörüne JPEG veya PNG dosyaları ekleyin
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Mode -->
+        <div id="modeUpload" style="display: none;">
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">📷</div>
+                <div class="upload-title">Soru Fotoğraflarını Sürükle & Bırak</div>
+                <div class="upload-subtitle">veya tıkla ve dosyaları seç (JPEG, PNG)</div>
+            </div>
+            <input type="file" id="fileInput" multiple accept="image/*">
+            <div class="file-grid" id="uploadFileGrid"></div>
+            <div class="actions" id="uploadActions" style="display: none;">
+                <button class="btn btn-secondary" onclick="clearUpload()">🗑️ Temizle</button>
+                <button class="btn btn-primary" id="solveUploadBtn" onclick="solveFromUpload()">🚀 Soruları Çöz</button>
+            </div>
+        </div>
+
+        <!-- Reports Mode -->
+        <div id="modeReports" style="display: none;">
+            <div class="folder-section">
+                <div class="folder-header">
+                    <div class="folder-info">
+                        <span class="folder-icon">📄</span>
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Çözüm Raporları</div>
+                            <code class="folder-path" id="outputPath">output/</code>
+                        </div>
+                    </div>
+                    <div class="folder-actions">
+                        <button class="btn btn-secondary" onclick="loadReports()">🔄 Yenile</button>
+                    </div>
+                </div>
+                <div id="reportsList"></div>
+                <div class="empty-state" id="emptyReports" style="display: none;">
+                    <div class="icon">📭</div>
+                    <div>Henüz rapor oluşturulmamış</div>
+                </div>
+            </div>
+            <!-- Report Viewer -->
+            <div class="report-viewer" id="reportViewer" style="display: none;">
+                <div class="report-header">
+                    <h3 id="reportTitle">📄 Rapor</h3>
+                    <div class="report-actions">
+                        <button class="btn btn-secondary" onclick="downloadReport()">⬇️ İndir</button>
+                        <button class="btn btn-secondary" onclick="closeReport()">✕ Kapat</button>
+                    </div>
+                </div>
+                <div class="report-content" id="reportContent"></div>
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="progress-section" id="progressSection">
+            <div class="progress-header">
+                <span class="progress-title">🧠 İşleniyor...</span>
+                <span class="progress-stats" id="progressStats">0 / 0</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+
+        <!-- Completion Banner -->
+        <div class="completion-banner" id="completionBanner">
+            <h2>✅ Tamamlandı!</h2>
+            <p id="completionText">Tüm sorular başarıyla çözüldü</p>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection"></div>
+    </div>
+
+    <script>
+        // State
+        let currentMode = 'folder';
+        let uploadedFiles = [];
+        let folderFiles = [];
+        let sessionId = null;
+
+        // DOM Elements
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const folderPath = document.getElementById('folderPath');
+        const folderFileGrid = document.getElementById('folderFileGrid');
+        const uploadFileGrid = document.getElementById('uploadFileGrid');
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadActions = document.getElementById('uploadActions');
+        const progressSection = document.getElementById('progressSection');
+        const progressBar = document.getElementById('progressBar');
+        const progressStats = document.getElementById('progressStats');
+        const completionBanner = document.getElementById('completionBanner');
+        const completionText = document.getElementById('completionText');
+        const resultsSection = document.getElementById('resultsSection');
+        const emptyState = document.getElementById('emptyState');
+        const solveFolderBtn = document.getElementById('solveFolderBtn');
+        const solveUploadBtn = document.getElementById('solveUploadBtn');
+
+        // Switch between modes
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('tabFolder').classList.toggle('active', mode === 'folder');
+            document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
+            document.getElementById('tabReports').classList.toggle('active', mode === 'reports');
+            document.getElementById('modeFolder').style.display = mode === 'folder' ? 'block' : 'none';
+            document.getElementById('modeUpload').style.display = mode === 'upload' ? 'block' : 'none';
+            document.getElementById('modeReports').style.display = mode === 'reports' ? 'block' : 'none';
+            
+            // Load reports when switching to reports tab
+            if (mode === 'reports') {
+                loadReports();
+            }
+            
+            // Reset results
+            resetResults();
+        }
+
+        // Check API status
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.api_key_set) {
+                    statusDot.classList.remove('error');
+                    statusText.textContent = 'API bağlantısı hazır ✓';
+                } else {
+                    statusDot.classList.add('error');
+                    statusText.textContent = '⚠️ GEMINI_API_KEY ayarlanmamış';
+                }
+                
+                if (data.questions_dir) {
+                    folderPath.textContent = data.questions_dir;
+                }
+            } catch (error) {
+                statusDot.classList.add('error');
+                statusText.textContent = '❌ Sunucuya bağlanılamadı';
+            }
+        }
+
+        // Scan folder for images
+        async function scanFolder() {
+            folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><div class="spinner"></div> Klasör taranıyor...</div>';
+            emptyState.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/scan-folder');
+                const data = await response.json();
+                
+                folderFiles = data.files;
+                folderPath.textContent = data.folder;
+                
+                if (folderFiles.length === 0) {
+                    folderFileGrid.innerHTML = '';
+                    emptyState.style.display = 'block';
+                    solveFolderBtn.disabled = true;
+                } else {
+                    emptyState.style.display = 'none';
+                    solveFolderBtn.disabled = false;
+                    renderFolderGrid();
+                }
+            } catch (error) {
+                folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Klasör taranamadı</div>';
+            }
+        }
+
+        // Render folder file grid
+        function renderFolderGrid() {
+            folderFileGrid.innerHTML = folderFiles.map((file, index) => `
+                <div class="file-card" id="folder-file-${index}">
+                    <img src="/api/image/${encodeURIComponent(file.filename)}" alt="${file.filename}">
+                    <div class="filename">${file.filename}</div>
+                    <div class="status-icon" id="folder-status-${index}"></div>
+                </div>
+            `).join('');
+        }
+
+        // Solve from folder
+        async function solveFromFolder() {
+            if (folderFiles.length === 0) return;
+            
+            solveFolderBtn.disabled = true;
+            solveFolderBtn.innerHTML = '<div class="spinner"></div> Başlatılıyor...';
+            resetResults();
+            
+            try {
+                const response = await fetch('/api/solve-folder', { method: 'POST' });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Çözüm başlatılamadı');
+                }
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                
+                progressSection.classList.add('active');
+                solveFolderBtn.innerHTML = '⏳ İşleniyor...';
+                
+                pollProgress('folder');
+            } catch (error) {
+                alert('Hata: ' + error.message);
+                solveFolderBtn.disabled = false;
+                solveFolderBtn.innerHTML = '🚀 Soruları Çöz';
+            }
+        }
+
+        // Upload zone events
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            uploadedFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+            if (uploadedFiles.length === 0) { alert('Lütfen geçerli resim dosyaları seçin'); return; }
+            uploadZone.classList.add('has-files');
+            renderUploadGrid();
+            uploadActions.style.display = 'flex';
+        }
+
+        function renderUploadGrid() {
+            uploadFileGrid.innerHTML = uploadedFiles.map((file, index) => {
+                const url = URL.createObjectURL(file);
+                return `
+                    <div class="file-card" id="upload-file-${index}">
+                        <img src="${url}" alt="${file.name}">
+                        <div class="filename">${file.name}</div>
+                        <div class="status-icon" id="upload-status-${index}"></div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearUpload() {
+            uploadedFiles = [];
+            uploadFileGrid.innerHTML = '';
+            uploadActions.style.display = 'none';
+            uploadZone.classList.remove('has-files');
+            fileInput.value = '';
+            resetResults();
+        }
+
+        async function solveFromUpload() {
+            if (uploadedFiles.length === 0) return;
+            
+            solveUploadBtn.disabled = true;
+            solveUploadBtn.innerHTML = '<div class="spinner"></div> Yükleniyor...';
+            resetResults();
+            
+            try {
+                const formData = new FormData();
+                uploadedFiles.forEach(file => formData.append('files', file));
+                
+                const uploadResponse = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!uploadResponse.ok) throw new Error('Dosya yükleme başarısız');
+                
+                const uploadData = await uploadResponse.json();
+                sessionId = uploadData.session_id;
+                
+                const solveResponse = await fetch(`/api/solve/${sessionId}`, { method: 'POST' });
+                if (!solveResponse.ok) {
+                    const error = await solveResponse.json();
+                    throw new Error(error.detail || 'Çözüm başlatılamadı');
+                }
+                
+                progressSection.classList.add('active');
+                solveUploadBtn.innerHTML = '⏳ İşleniyor...';
+                
+                pollProgress('upload');
+            } catch (error) {
+                alert('Hata: ' + error.message);
+                solveUploadBtn.disabled = false;
+                solveUploadBtn.innerHTML = '🚀 Soruları Çöz';
+            }
+        }
+
+        async function pollProgress(mode) {
+            if (!sessionId) return;
+            
+            try {
+                const response = await fetch(`/api/progress/${sessionId}`);
+                const data = await response.json();
+                
+                const percent = (data.progress / data.total) * 100;
+                progressBar.style.width = `${percent}%`;
+                progressStats.textContent = `${data.progress} / ${data.total}`;
+                
+                // Update file status icons
+                data.results.forEach((result, index) => {
+                    const statusEl = document.getElementById(`${mode}-status-${index}`);
+                    if (statusEl) statusEl.textContent = result.success ? '✅' : '❌';
+                });
+                
+                if (data.status === 'completed') {
+                    progressSection.classList.remove('active');
+                    completionBanner.classList.add('active');
+                    
+                    const successful = data.results.filter(r => r.success).length;
+                    completionText.textContent = `${successful} / ${data.total} soru başarıyla çözüldü`;
+                    
+                    renderResults(data.results, mode);
+                    
+                    if (mode === 'folder') {
+                        solveFolderBtn.disabled = false;
+                        solveFolderBtn.innerHTML = '🚀 Tekrar Çöz';
+                    } else {
+                        solveUploadBtn.disabled = false;
+                        solveUploadBtn.innerHTML = '🚀 Tekrar Çöz';
+                    }
+                } else if (data.status === 'error') {
+                    alert('Hata: ' + data.error);
+                    resetButtons();
+                    progressSection.classList.remove('active');
+                } else {
+                    setTimeout(() => pollProgress(mode), 1000);
+                }
+            } catch (error) {
+                console.error('Progress check error:', error);
+                setTimeout(() => pollProgress(mode), 2000);
+            }
+        }
+
+        function renderResults(results, mode) {
+            resultsSection.classList.add('active');
+            resultsSection.innerHTML = results.map((result, index) => {
+                let imgSrc;
+                if (mode === 'folder') {
+                    imgSrc = `/api/image/${encodeURIComponent(folderFiles[index]?.filename || result.filename)}`;
+                } else {
+                    imgSrc = URL.createObjectURL(uploadedFiles[index]);
+                }
+                return `
+                    <div class="result-card">
+                        <div class="result-header">
+                            <img src="${imgSrc}" alt="${result.filename}" class="result-image">
+                            <div class="result-info">
+                                <h3>Soru ${index + 1}: ${result.filename}</h3>
+                                <div class="meta">
+                                    ${result.success ? '✅ Çözüldü' : '❌ Başarısız'} 
+                                    • ${result.time_taken.toFixed(1)}s
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-solution">
+                            ${result.success ? formatSolution(result.solution) : result.error}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Render LaTeX formulas after DOM is updated
+            setTimeout(renderMath, 100);
+        }
+
+        function formatSolution(text) {
+            // First apply basic markdown formatting
+            let formatted = text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+            return formatted;
+        }
+
+        // Render LaTeX after results are displayed
+        function renderMath() {
+            if (typeof renderMathInElement !== 'undefined') {
+                renderMathInElement(resultsSection, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false}
+                    ],
+                    throwOnError: false,
+                    output: 'html'
+                });
+            }
+        }
+
+        function resetResults() {
+            progressSection.classList.remove('active');
+            completionBanner.classList.remove('active');
+            resultsSection.classList.remove('active');
+            resultsSection.innerHTML = '';
+            progressBar.style.width = '0%';
+        }
+
+        function resetButtons() {
+            solveFolderBtn.disabled = false;
+            solveFolderBtn.innerHTML = '🚀 Soruları Çöz';
+            solveUploadBtn.disabled = false;
+            solveUploadBtn.innerHTML = '🚀 Soruları Çöz';
+        }
+
+        // Reports functionality
+        let currentReportFilename = null;
+        
+        async function loadReports() {
+            const reportsList = document.getElementById('reportsList');
+            const emptyReports = document.getElementById('emptyReports');
+            const outputPath = document.getElementById('outputPath');
+            
+            reportsList.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Raporlar yükleniyor...</div>';
+            emptyReports.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/outputs');
+                const data = await response.json();
+                
+                outputPath.textContent = data.folder;
+                
+                if (data.reports.length === 0) {
+                    reportsList.innerHTML = '';
+                    emptyReports.style.display = 'block';
+                } else {
+                    emptyReports.style.display = 'none';
+                    reportsList.innerHTML = data.reports.map(report => {
+                        const date = new Date(report.modified);
+                        const dateStr = date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                        const sizeKB = (report.size / 1024).toFixed(1);
+                        return `
+                            <div class="report-item" onclick="viewReport('${report.filename}')">
+                                <div class="report-item-info">
+                                    <span class="report-item-icon">📄</span>
+                                    <div>
+                                        <div class="report-item-name">${report.filename}</div>
+                                        <div class="report-item-meta">${dateStr} • ${sizeKB} KB</div>
+                                    </div>
+                                </div>
+                                <span>→</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } catch (error) {
+                reportsList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Raporlar yüklenemedi</div>';
+            }
+        }
+
+        async function viewReport(filename) {
+            const reportViewer = document.getElementById('reportViewer');
+            const reportTitle = document.getElementById('reportTitle');
+            const reportContent = document.getElementById('reportContent');
+            
+            currentReportFilename = filename;
+            reportTitle.textContent = '📄 ' + filename;
+            reportContent.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div> Rapor yükleniyor...</div>';
+            reportViewer.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/report/${encodeURIComponent(filename)}`);
+                const data = await response.json();
+                
+                // Convert markdown to HTML (basic)
+                let html = data.content
+                    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/`(.*?)`/g, '<code>$1</code>')
+                    .replace(/^- (.*$)/gm, '<li>$1</li>')
+                    .replace(/^---$/gm, '<hr>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>');
+                
+                html = '<p>' + html + '</p>';
+                html = html.replace(/<p><h/g, '<h').replace(/<\/h([1-3])><\/p>/g, '</h$1>');
+                html = html.replace(/<p><li>/g, '<ul><li>').replace(/<\/li><\/p>/g, '</li></ul>');
+                html = html.replace(/<p><hr><\/p>/g, '<hr>');
+                
+                reportContent.innerHTML = html;
+                
+                // Render LaTeX if available
+                setTimeout(renderMathInReport, 100);
+            } catch (error) {
+                reportContent.innerHTML = '<div style="color: var(--error);">❌ Rapor yüklenemedi: ' + error.message + '</div>';
+            }
+        }
+
+        function renderMathInReport() {
+            const reportContent = document.getElementById('reportContent');
+            if (typeof renderMathInElement !== 'undefined') {
+                renderMathInElement(reportContent, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false}
+                    ],
+                    throwOnError: false,
+                    output: 'html'
+                });
+            }
+        }
+
+        function downloadReport() {
+            if (currentReportFilename) {
+                window.open(`/api/report/${encodeURIComponent(currentReportFilename)}/raw`, '_blank');
+            }
+        }
+
+        function closeReport() {
+            document.getElementById('reportViewer').style.display = 'none';
+            currentReportFilename = null;
+        }
+
+        // Initialize
+        checkStatus();
+        scanFolder();
+    </script>
+</body>
+</html>
