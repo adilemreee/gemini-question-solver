@@ -622,11 +622,14 @@ async def solve_questions(session_id: str):
 
 
 async def process_session(session_id: str):
-    """Background task to process all questions"""
+    """Background task to process all questions in parallel"""
     session = active_sessions[session_id]
     
     try:
+        from config import MAX_CONCURRENT_REQUESTS
+        
         client = GeminiClient()
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
         
         # Create database session
         db.create_session(session_id, source=session.get("source", "web"), total=session["total"])
@@ -650,14 +653,48 @@ async def process_session(session_id: str):
             
             images.append((file_info["filename"], file_info["path"], image_bytes, mime_type))
         
-        # Process each image
+        # Process images in parallel
         results = []
         success_count = 0
         failed_count = 0
+        completed_count = 0
         
-        for i, (filename, image_path, image_bytes, mime_type) in enumerate(images):
-            result = await client.solve_question(image_bytes, mime_type, filename)
-            results.append(result)
+        async def solve_single(idx: int, filename: str, image_path: str, image_bytes: bytes, mime_type: str):
+            """Solve a single question with semaphore control"""
+            nonlocal completed_count, success_count, failed_count
+            
+            async with semaphore:
+                result = await client.solve_question(image_bytes, mime_type, filename)
+                result["_idx"] = idx
+                result["_image_path"] = image_path
+                
+                completed_count += 1
+                if result["success"]:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                
+                # Update progress
+                session["progress"] = completed_count
+                
+                return result
+        
+        # Create tasks for all images
+        tasks = [
+            solve_single(i, filename, image_path, image_bytes, mime_type)
+            for i, (filename, image_path, image_bytes, mime_type) in enumerate(images)
+        ]
+        
+        # Run all tasks concurrently
+        parallel_results = await asyncio.gather(*tasks)
+        
+        # Sort results by original index to maintain order
+        parallel_results.sort(key=lambda r: r["_idx"])
+        
+        # Post-process results (save to DB, move files)
+        for result in parallel_results:
+            image_path = result.pop("_image_path")
+            result.pop("_idx")
             
             topic = result.get("topic", "Genel")
             new_image_path = image_path
@@ -668,7 +705,7 @@ async def process_session(session_id: str):
             
             # Save to database
             db.save_question(
-                filename=filename,
+                filename=result["filename"],
                 image_path=new_image_path,
                 topic=topic,
                 subtopic=result.get("subtopic"),
@@ -679,14 +716,9 @@ async def process_session(session_id: str):
                 session_id=session_id
             )
             
-            if result["success"]:
-                success_count += 1
-            else:
-                failed_count += 1
-            
-            # Update progress
-            session["progress"] = i + 1
-            session["results"] = results
+            results.append(result)
+        
+        session["results"] = results
         
         # Update session in database
         db.update_session(

@@ -14,7 +14,7 @@ GEMINI_MODEL = "gemini-3-pro-preview"  # Fast and efficient for vision tasks
 
 # Parallel Processing
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "10"))
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "180"))  # 3 dakika timeout
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "720"))  # 6 dakika timeout
 
 # Retry Configuration
 MAX_RETRIES = 3

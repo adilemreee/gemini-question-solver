@@ -863,6 +863,67 @@
         font-size: 0.85rem;
       }
 
+      /* Date Group Accordion */
+      .date-group {
+        margin-bottom: 16px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .date-group-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background: var(--bg-card);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      .date-group-header:hover {
+        background: var(--bg-glass);
+      }
+      .date-group-header .date-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 600;
+      }
+      .date-group-header .date-icon {
+        font-size: 1.5rem;
+      }
+      .date-group-header .date-stats {
+        display: flex;
+        gap: 12px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+      }
+      .date-group-header .date-stats .success-count {
+        color: var(--success);
+      }
+      .date-group-header .date-stats .failed-count {
+        color: var(--error);
+      }
+      .date-group-header .expand-icon {
+        transition: transform 0.2s ease;
+      }
+      .date-group.collapsed .expand-icon {
+        transform: rotate(-90deg);
+      }
+      .date-group-content {
+        padding: 16px;
+        background: rgba(0,0,0,0.2);
+      }
+      .date-group.collapsed .date-group-content {
+        display: none;
+      }
+      .date-group-content .history-item {
+        margin-bottom: 8px;
+      }
+      .date-group-content .history-item:last-child {
+        margin-bottom: 0;
+      }
+
       @media (max-width: 768px) {
         .container {
           padding: 24px 16px;
@@ -1961,44 +2022,78 @@
             emptyHistory.style.display = "block";
           } else {
             emptyHistory.style.display = "none";
-            historyList.innerHTML = data.questions
-              .map((q) => {
-                const date = new Date(q.created_at);
-                const dateStr =
-                  date.toLocaleDateString("tr-TR") +
-                  " " +
-                  date.toLocaleTimeString("tr-TR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-                const statusIcon = q.status === "success" ? "✅" : "❌";
-                const statusClass =
-                  q.status === "success" ? "success" : "failed";
-                const timeStr = q.time_taken
-                  ? `${q.time_taken.toFixed(1)}s`
-                  : "-";
-
+            
+            // Group questions by date
+            const groupedByDate = {};
+            data.questions.forEach(q => {
+              const date = new Date(q.created_at);
+              const dateKey = date.toLocaleDateString("tr-TR");
+              if (!groupedByDate[dateKey]) {
+                groupedByDate[dateKey] = [];
+              }
+              groupedByDate[dateKey].push(q);
+            });
+            
+            // Render grouped accordion
+            historyList.innerHTML = Object.entries(groupedByDate)
+              .map(([dateKey, questions]) => {
+                const successCount = questions.filter(q => q.status === "success").length;
+                const failedCount = questions.length - successCount;
+                const isToday = dateKey === new Date().toLocaleDateString("tr-TR");
+                const dateLabel = isToday ? "Bugün" : dateKey;
+                
+                const questionsHtml = questions.map(q => {
+                  const time = new Date(q.created_at);
+                  const timeStr = time.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+                  const statusIcon = q.status === "success" ? "✅" : "❌";
+                  const statusClass = q.status === "success" ? "success" : "failed";
+                  const solveTime = q.time_taken ? `${q.time_taken.toFixed(1)}s` : "-";
+                  
+                  return `
+                    <div class="history-item ${statusClass}" id="question-${q.id}">
+                      <div class="history-item-info">
+                        <span class="history-item-icon">${statusIcon}</span>
+                        <div class="history-item-details">
+                          <div class="history-item-name">${q.filename}</div>
+                          <div class="history-item-meta">
+                            <span class="topic">${q.topic || "Genel"}</span>
+                            <span>⏱️ ${solveTime}</span>
+                            <span>🕐 ${timeStr}</span>
+                            ${q.retry_count > 0 ? `<span>🔄 ${q.retry_count}x tekrar</span>` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="history-item-actions">
+                        ${q.status === "failed" ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ""}
+                        <button class="btn btn-secondary" onclick="viewQuestion(${q.id})">👁️ Görüntüle</button>
+                        <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteQuestion(${q.id})">🗑️</button>
+                      </div>
+                    </div>
+                  `;
+                }).join("");
+                
                 return `
-                            <div class="history-item ${statusClass}" id="question-${q.id}">
-                                <div class="history-item-info">
-                                    <span class="history-item-icon">${statusIcon}</span>
-                                    <div class="history-item-details">
-                                        <div class="history-item-name">${q.filename}</div>
-                                        <div class="history-item-meta">
-                                            <span class="topic">${q.topic || "Genel"}</span>
-                                            <span>⏱️ ${timeStr}</span>
-                                            <span>📅 ${dateStr}</span>
-                                            ${q.retry_count > 0 ? `<span>🔄 ${q.retry_count}x tekrar</span>` : ""}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="history-item-actions">
-                                    ${q.status === "failed" ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ""}
-                                    <button class="btn btn-secondary" onclick="viewQuestion(${q.id})">👁️ Görüntüle</button>
-                                    <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteQuestion(${q.id})">🗑️ Sil</button>
-                                </div>
-                            </div>
-                        `;
+                  <div class="date-group" id="date-group-${dateKey.replace(/\./g, '-')}" data-question-ids="${questions.map(q => q.id).join(',')}">
+                    <div class="date-group-header" onclick="toggleDateGroup(this.parentElement)">
+                      <div class="date-info">
+                        <span class="date-icon">📅</span>
+                        <span>${dateLabel}</span>
+                        <span style="font-weight: 400; color: var(--text-secondary);">(${questions.length} soru)</span>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="event.stopPropagation(); viewAllQuestions('${dateKey}', [${questions.map(q => q.id).join(',')}])">📖 Tümünü Görüntüle</button>
+                        <div class="date-stats">
+                          <span class="success-count">✅ ${successCount}</span>
+                          <span class="failed-count">❌ ${failedCount}</span>
+                        </div>
+                        <span class="expand-icon">▼</span>
+                      </div>
+                    </div>
+                    <div class="date-group-content">
+                      ${questionsHtml}
+                    </div>
+                  </div>
+                `;
               })
               .join("");
           }
@@ -2160,7 +2255,7 @@
 
           let html = `
                     <div style="margin-bottom: 24px; background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px;">
-                        <img src="/api/image/${encodeURIComponent(q.filename)}" style="max-height: 200px; display: block; margin: 0 auto 16px; border-radius: 8px;">
+                        <img src="/api/image/${encodeURIComponent(q.filename)}?topic=${encodeURIComponent(q.topic || '')}" style="max-height: 200px; display: block; margin: 0 auto 16px; border-radius: 8px;" onerror="this.style.display='none'">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                             <div><strong>Konu:</strong> ${q.topic || "Genel"}</div>
                             <div><strong>Durum:</strong> ${q.status === "success" ? "✅ Başarılı" : "❌ Başarısız"}</div>
@@ -2197,6 +2292,88 @@
         return text
           .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
           .replace(/\n/g, "<br>");
+      }
+
+      function toggleDateGroup(element) {
+        element.classList.toggle("collapsed");
+      }
+
+      function collapseAllDateGroups() {
+        document.querySelectorAll(".date-group").forEach(g => g.classList.add("collapsed"));
+      }
+
+      function expandAllDateGroups() {
+        document.querySelectorAll(".date-group").forEach(g => g.classList.remove("collapsed"));
+      }
+
+      async function viewAllQuestions(dateKey, questionIds) {
+        const viewer = document.getElementById("reportViewer");
+        const backdrop = document.getElementById("backdrop");
+        const title = document.getElementById("reportTitle");
+        const content = document.getElementById("reportContent");
+
+        title.textContent = `📅 ${dateKey} - Tüm Çözümler (${questionIds.length} soru)`;
+        content.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div> Çözümler yükleniyor...</div>';
+        
+        viewer.style.display = "flex";
+        backdrop.style.display = "block";
+
+        try {
+          // Fetch all questions in parallel
+          const questions = await Promise.all(
+            questionIds.map(id => fetch(`/api/questions/${id}`).then(r => r.json()))
+          );
+
+          let html = questions.map((q, idx) => {
+            const statusIcon = q.status === "success" ? "✅" : "❌";
+            const statusText = q.status === "success" ? "Çözüldü" : "Başarısız";
+            const timeStr = q.time_taken ? q.time_taken.toFixed(1) + "s" : "-";
+            
+            let solutionHtml = "";
+            if (q.solution) {
+              solutionHtml = `<div class="solution" style="margin-top: 16px;">${formatSolution(q.solution)}</div>`;
+            } else if (q.error) {
+              solutionHtml = `<div style="color: var(--error); padding: 12px; border: 1px solid var(--error); border-radius: 8px; background: rgba(239, 68, 68, 0.1); margin-top: 16px;">❌ Hata: ${q.error}</div>`;
+            }
+
+            return `
+              <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border-color);">
+                <div style="display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px;">
+                  <div style="flex-shrink: 0;">
+                    <img src="/api/image/${encodeURIComponent(q.filename)}?topic=${encodeURIComponent(q.topic || '')}" 
+                         style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px;" 
+                         onerror="this.style.display='none'">
+                  </div>
+                  <div style="flex: 1;">
+                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">
+                      Soru ${idx + 1}: ${q.filename}
+                    </div>
+                    <div style="display: flex; gap: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+                      <span>${statusIcon} ${statusText}</span>
+                      <span style="background: var(--accent-gradient); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem;">${q.topic || "Genel"}</span>
+                      <span>⏱️ ${timeStr}</span>
+                    </div>
+                  </div>
+                </div>
+                ${solutionHtml}
+              </div>
+            `;
+          }).join("");
+
+          content.innerHTML = `
+            <div style="margin-bottom: 16px; padding: 12px; background: rgba(99, 102, 241, 0.1); border-radius: 8px; text-align: center;">
+              ✅ ${questions.filter(q => q.status === "success").length} başarılı &nbsp;|&nbsp; 
+              ❌ ${questions.filter(q => q.status !== "success").length} başarısız &nbsp;|&nbsp;
+              📊 Toplam ${questionIds.length} soru
+            </div>
+            ${html}
+          `;
+
+          // Render math formulas
+          setTimeout(() => renderMathInReport(), 100);
+        } catch (error) {
+          content.innerHTML = `<div style="color: var(--error); text-align: center; padding: 40px;">❌ Çözümler yüklenemedi: ${error.message}</div>`;
+        }
       }
 
       // Initialize
