@@ -43,6 +43,34 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 active_sessions = {}
 
 
+def move_to_topic_folder(image_path: str, topic: str) -> str:
+    """Move solved question to topic folder and return new path"""
+    source = Path(image_path)
+    if not source.exists():
+        return image_path
+    
+    # Create topic folder
+    topic_folder = QUESTIONS_DIR / topic
+    topic_folder.mkdir(parents=True, exist_ok=True)
+    
+    # Generate unique filename if exists
+    dest = topic_folder / source.name
+    counter = 1
+    while dest.exists():
+        stem = source.stem
+        suffix = source.suffix
+        dest = topic_folder / f"{stem}_{counter}{suffix}"
+        counter += 1
+    
+    # Move file
+    try:
+        import shutil
+        shutil.move(str(source), str(dest))
+        return str(dest)
+    except Exception:
+        return image_path
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home():
     """Serve the main web interface"""
@@ -131,11 +159,85 @@ async def solve_folder():
     }
 
 
+class SelectedFilesRequest(BaseModel):
+    filenames: List[str]
+
+
+@app.post("/api/solve-selected")
+async def solve_selected(request: SelectedFilesRequest):
+    """Create session from selected files in questions folder and start solving"""
+    QUESTIONS_DIR.mkdir(exist_ok=True)
+    
+    if not request.filenames:
+        raise HTTPException(status_code=400, detail="No files selected")
+    
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
+    
+    supported_formats = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    found_files = []
+    
+    for filename in request.filenames:
+        file_path = QUESTIONS_DIR / filename
+        if file_path.exists() and file_path.is_file() and file_path.suffix.lower() in supported_formats:
+            found_files.append({
+                "filename": file_path.name,
+                "size": file_path.stat().st_size,
+                "path": str(file_path)
+            })
+    
+    if not found_files:
+        raise HTTPException(status_code=400, detail="No valid images found in selection")
+    
+    # Create session
+    session_id = str(uuid.uuid4())
+    active_sessions[session_id] = {
+        "status": "processing",
+        "files": found_files,
+        "results": [],
+        "progress": 0,
+        "total": len(found_files),
+        "source": "folder_selected",
+        "created_at": datetime.now().isoformat()
+    }
+    
+    # Start processing
+    asyncio.create_task(process_session(session_id))
+    
+    return {
+        "session_id": session_id,
+        "file_count": len(found_files),
+        "files": found_files
+    }
+
+
 @app.get("/api/image/{filename}")
-async def get_image(filename: str):
-    """Serve image from questions folder"""
-    file_path = QUESTIONS_DIR / filename
-    if not file_path.exists():
+async def get_image(filename: str, topic: str = None):
+    """Serve image from questions folder or topic subfolders"""
+    file_path = None
+    
+    # First check if topic is specified
+    if topic:
+        topic_path = QUESTIONS_DIR / topic / filename
+        if topic_path.exists():
+            file_path = topic_path
+    
+    # Check root folder
+    if not file_path:
+        root_path = QUESTIONS_DIR / filename
+        if root_path.exists():
+            file_path = root_path
+    
+    # Search in all topic subfolders
+    if not file_path:
+        for subfolder in QUESTIONS_DIR.iterdir():
+            if subfolder.is_dir():
+                sub_path = subfolder / filename
+                if sub_path.exists():
+                    file_path = sub_path
+                    break
+    
+    if not file_path:
         raise HTTPException(status_code=404, detail="Image not found")
     
     # Determine content type
@@ -151,6 +253,74 @@ async def get_image(filename: str):
     
     from fastapi.responses import FileResponse
     return FileResponse(file_path, media_type=content_type)
+
+
+@app.get("/api/topic-folders")
+async def list_topic_folders():
+    """List all topic folders with file counts"""
+    QUESTIONS_DIR.mkdir(exist_ok=True)
+    
+    folders = []
+    
+    # Count files in root (unorganized)
+    root_files = [f for f in QUESTIONS_DIR.iterdir() 
+                  if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+    
+    if root_files:
+        folders.append({
+            "name": "Yeni Sorular",
+            "path": str(QUESTIONS_DIR),
+            "count": len(root_files),
+            "is_root": True
+        })
+    
+    # List topic folders
+    for folder in sorted(QUESTIONS_DIR.iterdir()):
+        if folder.is_dir() and not folder.name.startswith('.'):
+            files = [f for f in folder.iterdir() 
+                    if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+            folders.append({
+                "name": folder.name,
+                "path": str(folder),
+                "count": len(files),
+                "is_root": False
+            })
+    
+    return {
+        "base_folder": str(QUESTIONS_DIR),
+        "folders": folders,
+        "total_folders": len(folders)
+    }
+
+
+@app.get("/api/topic-folder/{topic}")
+async def get_topic_folder_files(topic: str):
+    """Get files in a specific topic folder"""
+    if topic == "Yeni Sorular":
+        folder_path = QUESTIONS_DIR
+        files = [f for f in folder_path.iterdir() 
+                if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+    else:
+        folder_path = QUESTIONS_DIR / topic
+        if not folder_path.exists():
+            raise HTTPException(status_code=404, detail="Topic folder not found")
+        files = [f for f in folder_path.iterdir() 
+                if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+    
+    return {
+        "topic": topic,
+        "path": str(folder_path),
+        "count": len(files),
+        "files": [
+            {
+                "filename": f.name,
+                "path": str(f),
+                "size": f.stat().st_size,
+                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+            }
+            for f in sorted(files)
+        ]
+    }
 
 
 @app.get("/api/outputs")
@@ -201,6 +371,191 @@ async def get_report_raw(filename: str):
     from fastapi.responses import FileResponse
     return FileResponse(file_path, media_type="text/markdown", filename=filename)
 
+
+@app.get("/api/report/{filename}/pdf")
+async def get_report_pdf(filename: str):
+    """Export report as PDF with LaTeX formula support"""
+    file_path = OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    try:
+        import markdown
+        from weasyprint import HTML, CSS
+        from io import BytesIO
+    except ImportError:
+        raise HTTPException(
+            status_code=500, 
+            detail="PDF export dependencies not installed. Run: pip install markdown weasyprint"
+        )
+    
+    # Read markdown content
+    md_content = file_path.read_text(encoding="utf-8")
+    
+    # Convert markdown to HTML
+    md = markdown.Markdown(extensions=['tables', 'fenced_code'])
+    html_body = md.convert(md_content)
+    
+    # Full HTML with KaTeX CSS and styling
+    html_template = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+            
+            body {{
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                line-height: 1.8;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 40px;
+                color: #1a1a2e;
+                background: #ffffff;
+            }}
+            
+            h1 {{
+                font-size: 28px;
+                color: #6366f1;
+                border-bottom: 3px solid #6366f1;
+                padding-bottom: 12px;
+                margin-bottom: 24px;
+            }}
+            
+            h2 {{
+                font-size: 22px;
+                color: #4f46e5;
+                margin-top: 32px;
+                border-left: 4px solid #6366f1;
+                padding-left: 12px;
+            }}
+            
+            h3 {{
+                font-size: 18px;
+                color: #4338ca;
+                margin-top: 24px;
+            }}
+            
+            p {{
+                margin-bottom: 16px;
+                text-align: justify;
+            }}
+            
+            code {{
+                background: #f3f4f6;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-family: 'Monaco', 'Consolas', monospace;
+                font-size: 14px;
+            }}
+            
+            pre {{
+                background: #1e1e2e;
+                color: #cdd6f4;
+                padding: 20px;
+                border-radius: 8px;
+                overflow-x: auto;
+                font-size: 13px;
+            }}
+            
+            pre code {{
+                background: transparent;
+                padding: 0;
+                color: inherit;
+            }}
+            
+            strong {{
+                color: #6366f1;
+            }}
+            
+            ul, ol {{
+                margin-left: 24px;
+                margin-bottom: 16px;
+            }}
+            
+            li {{
+                margin-bottom: 8px;
+            }}
+            
+            hr {{
+                border: none;
+                border-top: 2px solid #e5e7eb;
+                margin: 32px 0;
+            }}
+            
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }}
+            
+            th, td {{
+                border: 1px solid #e5e7eb;
+                padding: 12px;
+                text-align: left;
+            }}
+            
+            th {{
+                background: #f3f4f6;
+                font-weight: 600;
+            }}
+            
+            /* Math formulas styling */
+            .math-block {{
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                padding: 16px 20px;
+                border-radius: 8px;
+                border-left: 4px solid #6366f1;
+                margin: 16px 0;
+                font-family: 'Times New Roman', serif;
+                font-size: 16px;
+                overflow-x: auto;
+            }}
+            
+            .solution-section {{
+                background: #fafafa;
+                padding: 20px;
+                border-radius: 12px;
+                margin: 16px 0;
+                border: 1px solid #e5e7eb;
+            }}
+            
+            /* Footer */
+            .footer {{
+                margin-top: 48px;
+                padding-top: 16px;
+                border-top: 1px solid #e5e7eb;
+                text-align: center;
+                color: #9ca3af;
+                font-size: 12px;
+            }}
+        </style>
+    </head>
+    <body>
+        {html_body}
+        <div class="footer">
+            Gemini Question Solver ile oluşturuldu
+        </div>
+    </body>
+    </html>
+    '''
+    
+    # Generate PDF
+    pdf_buffer = BytesIO()
+    HTML(string=html_template).write_pdf(pdf_buffer)
+    pdf_buffer.seek(0)
+    
+    pdf_filename = filename.replace('.md', '.pdf')
+    
+    from fastapi.responses import Response
+    return Response(
+        content=pdf_buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={pdf_filename}"
+        }
+    )
 
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
@@ -304,11 +659,18 @@ async def process_session(session_id: str):
             result = await client.solve_question(image_bytes, mime_type, filename)
             results.append(result)
             
+            topic = result.get("topic", "Genel")
+            new_image_path = image_path
+            
+            # Move successful questions to topic folder (only for folder source)
+            if result["success"] and session.get("source") in ["folder", "folder_selected"]:
+                new_image_path = move_to_topic_folder(image_path, topic)
+            
             # Save to database
             db.save_question(
                 filename=filename,
-                image_path=image_path,
-                topic=result.get("topic", "Genel"),
+                image_path=new_image_path,
+                topic=topic,
                 subtopic=result.get("subtopic"),
                 status="success" if result["success"] else "failed",
                 solution=result.get("solution"),
@@ -334,10 +696,12 @@ async def process_session(session_id: str):
             completed_at=datetime.now().isoformat()
         )
         
-        # Generate report
+        # Generate report with descriptive name
         generator = ReportGenerator()
         session_dir = UPLOAD_DIR / session_id
-        report_path = generator.generate(results, session_dir, f"rapor_{session_id[:8]}.md")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        report_name = f"Cozum_{timestamp}_{len(results)}soru.md"
+        report_path = generator.generate(results, session_dir, report_name)
         
         session["status"] = "completed"
         session["report_path"] = str(report_path)

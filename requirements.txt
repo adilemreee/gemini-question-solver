@@ -16,3 +16,7 @@ aiofiles>=23.0.0              # Async file operations
 fastapi>=0.109.0              # Modern async web framework
 uvicorn>=0.27.0               # ASGI server
 python-multipart>=0.0.6       # File upload support
+
+# PDF Export
+markdown>=3.5.0               # Markdown to HTML conversion
+weasyprint>=60.0              # HTML to PDF with CSS support

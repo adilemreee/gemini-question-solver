@@ -1,753 +1,1641 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🧠 Gemini Question Solver</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <!-- KaTeX for LaTeX math rendering -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
+    />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"
+    ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    ></script>
+    <!-- html2pdf.js for client-side PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        :root {
-            --bg-primary: #0a0a0f;
-            --bg-secondary: #12121a;
-            --bg-card: rgba(255, 255, 255, 0.03);
-            --bg-glass: rgba(255, 255, 255, 0.05);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.6);
-            --text-muted: rgba(255, 255, 255, 0.4);
-            --accent-primary: #6366f1;
-            --accent-secondary: #8b5cf6;
-            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-            --success: #22c55e;
-            --error: #ef4444;
-            --warning: #f59e0b;
-            --radius-sm: 8px;
-            --radius-md: 12px;
-            --radius-lg: 16px;
-            --radius-xl: 24px;
-            --shadow-glow: 0 0 60px rgba(99, 102, 241, 0.15);
-        }
+      :root {
+        --bg-primary: #0a0a0f;
+        --bg-secondary: #12121a;
+        --bg-card: rgba(255, 255, 255, 0.03);
+        --bg-glass: rgba(255, 255, 255, 0.05);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #ffffff;
+        --text-secondary: rgba(255, 255, 255, 0.6);
+        --text-muted: rgba(255, 255, 255, 0.4);
+        --accent-primary: #6366f1;
+        --accent-secondary: #8b5cf6;
+        --accent-gradient: linear-gradient(
+          135deg,
+          #6366f1 0%,
+          #8b5cf6 50%,
+          #a855f7 100%
+        );
+        --success: #22c55e;
+        --error: #ef4444;
+        --warning: #f59e0b;
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 24px;
+        --shadow-glow: 0 0 60px rgba(99, 102, 241, 0.15);
+      }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
+      body {
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
 
-        .bg-decoration {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            pointer-events: none; z-index: 0;
+      .bg-decoration {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .bg-decoration::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background:
+          radial-gradient(
+            circle at 30% 20%,
+            rgba(99, 102, 241, 0.08) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 70% 80%,
+            rgba(139, 92, 246, 0.08) 0%,
+            transparent 50%
+          );
+        animation: float 20s ease-in-out infinite;
+      }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translate(0, 0) rotate(0deg);
         }
-        .bg-decoration::before {
-            content: '';
-            position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-            background: radial-gradient(circle at 30% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-                        radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
-            animation: float 20s ease-in-out infinite;
+        50% {
+          transform: translate(-2%, -2%) rotate(1deg);
         }
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0) rotate(0deg); }
-            50% { transform: translate(-2%, -2%) rotate(1deg); }
-        }
+      }
 
-        .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; position: relative; z-index: 1; }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 24px;
+        position: relative;
+        z-index: 1;
+      }
 
-        .header { text-align: center; margin-bottom: 48px; }
+      .header {
+        text-align: center;
+        margin-bottom: 48px;
+      }
+      .header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 12px;
+      }
+      .header p {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 32px;
+        padding: 12px 24px;
+        background: var(--bg-glass);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        backdrop-filter: blur(10px);
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--success);
+        animation: pulse 2s infinite;
+      }
+      .status-dot.error {
+        background: var(--error);
+        animation: none;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      /* Mode Tabs */
+      .mode-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+        background: var(--bg-card);
+        padding: 8px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+      }
+      .mode-tab {
+        flex: 1;
+        padding: 14px 24px;
+        border: none;
+        border-radius: var(--radius-md);
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        background: transparent;
+        color: var(--text-secondary);
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .mode-tab:hover {
+        background: var(--bg-glass);
+        color: var(--text-primary);
+      }
+      .mode-tab.active {
+        background: var(--accent-gradient);
+        color: white;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+      }
+
+      /* Folder Section */
+      .folder-section {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        padding: 32px;
+        margin-bottom: 32px;
+      }
+      .folder-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .folder-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .folder-icon {
+        font-size: 2rem;
+      }
+      .folder-path {
+        font-family: monospace;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        background: var(--bg-glass);
+        padding: 8px 16px;
+        border-radius: var(--radius-sm);
+      }
+      .folder-actions {
+        display: flex;
+        gap: 12px;
+      }
+
+      /* Upload zone */
+      .upload-zone {
+        background: var(--bg-card);
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius-xl);
+        padding: 60px 40px;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        margin-bottom: 32px;
+      }
+      .upload-zone:hover,
+      .upload-zone.dragover {
+        border-color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+        box-shadow: var(--shadow-glow);
+      }
+      .upload-zone.has-files {
+        border-style: solid;
+        border-color: var(--success);
+        background: rgba(34, 197, 94, 0.05);
+      }
+      .upload-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+      }
+      .upload-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .upload-subtitle {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+      }
+
+      /* File preview grid */
+      .file-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+      .file-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        text-align: center;
+        transition: all 0.2s ease;
+        position: relative;
+        cursor: pointer;
+      }
+      .file-card:hover {
+        border-color: var(--accent-primary);
+        transform: translateY(-2px);
+      }
+      .file-card.selected {
+        border-color: var(--success);
+        background: rgba(34, 197, 94, 0.1);
+      }
+      .file-card img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        border-radius: var(--radius-sm);
+        margin-bottom: 8px;
+        pointer-events: none;
+      }
+      .file-card .filename {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .file-card .status-icon {
+        font-size: 1.5rem;
+        margin-top: 4px;
+      }
+      .file-card .checkbox {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        width: 24px;
+        height: 24px;
+        background: var(--bg-glass);
+        border: 2px solid var(--border-color);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        transition: all 0.2s ease;
+        z-index: 2;
+      }
+      .file-card.selected .checkbox {
+        background: var(--success);
+        border-color: var(--success);
+      }
+      .topic-folder-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s ease;
+      }
+      .topic-folder-btn:hover {
+        background: rgba(99, 102, 241, 0.2);
+        border-color: var(--primary);
+      }
+      .topic-folder-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+      }
+      .topic-folder-btn .count {
+        background: rgba(255,255,255,0.2);
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+      }
+      .topic-folder-btn.active .count {
+        background: rgba(255,255,255,0.3);
+      }
+      .selection-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: rgba(34, 197, 94, 0.1);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: var(--radius-md);
+        margin-bottom: 16px;
+      }
+      .selection-info.hidden {
+        display: none;
+      }
+      .selection-count {
+        font-weight: 600;
+        color: var(--success);
+      }
+
+      /* Empty state */
+      .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+      }
+      .empty-state .icon {
+        font-size: 3rem;
+        margin-bottom: 16px;
+        opacity: 0.5;
+      }
+
+      /* Actions */
+      .actions {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        margin-bottom: 48px;
+      }
+      .btn {
+        padding: 14px 32px;
+        border: none;
+        border-radius: var(--radius-md);
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn-primary {
+        background: var(--accent-gradient);
+        color: white;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+      }
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4);
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-secondary {
+        background: var(--bg-glass);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+      }
+      .btn-secondary:hover {
+        background: var(--bg-card);
+      }
+
+      /* Progress section */
+      .progress-section {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        padding: 32px;
+        margin-bottom: 32px;
+        display: none;
+      }
+      .progress-section.active {
+        display: block;
+      }
+      .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .progress-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+      .progress-stats {
+        color: var(--text-secondary);
+      }
+      .progress-bar-container {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: var(--radius-sm);
+        height: 8px;
+        overflow: hidden;
+        margin-bottom: 24px;
+      }
+      .progress-bar {
+        height: 100%;
+        background: var(--accent-gradient);
+        border-radius: var(--radius-sm);
+        transition: width 0.3s ease;
+        width: 0%;
+      }
+
+      /* Results section */
+      .results-section {
+        display: none;
+      }
+      .results-section.active {
+        display: block;
+      }
+      .result-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        margin-bottom: 16px;
+        transition: all 0.2s ease;
+      }
+      .result-card:hover {
+        border-color: var(--accent-primary);
+      }
+      .result-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .result-image {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: var(--radius-md);
+      }
+      .result-info h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .result-info .meta {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+      }
+      .result-solution {
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        white-space: pre-wrap;
+        font-size: 0.95rem;
+        line-height: 1.7;
+        color: var(--text-secondary);
+      }
+      .result-solution strong {
+        color: var(--text-primary);
+      }
+
+      /* KaTeX Math Styling */
+      .result-solution .katex {
+        font-size: 1.1em;
+        color: var(--text-primary);
+      }
+      .result-solution .katex-display {
+        margin: 16px 0;
+        padding: 16px;
+        background: rgba(99, 102, 241, 0.1);
+        border-radius: var(--radius-sm);
+        border-left: 3px solid var(--accent-primary);
+        overflow-x: auto;
+      }
+      .result-solution .katex-display > .katex {
+        text-align: left;
+      }
+
+      /* Completion banner */
+      .completion-banner {
+        background: linear-gradient(
+          135deg,
+          rgba(34, 197, 94, 0.1) 0%,
+          rgba(16, 185, 129, 0.1) 100%
+        );
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: var(--radius-xl);
+        padding: 32px;
+        text-align: center;
+        margin-bottom: 32px;
+        display: none;
+      }
+      .completion-banner.active {
+        display: block;
+      }
+      .completion-banner h2 {
+        color: var(--success);
+        font-size: 1.5rem;
+        margin-bottom: 8px;
+      }
+      .completion-banner p {
+        color: var(--text-secondary);
+      }
+
+      #fileInput {
+        display: none;
+      }
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Report List */
+      .report-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        background: var(--bg-glass);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        margin-bottom: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .report-item:hover {
+        border-color: var(--accent-primary);
+        transform: translateX(4px);
+      }
+      .report-item-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .report-item-icon {
+        font-size: 1.5rem;
+      }
+      .report-item-name {
+        font-weight: 600;
+      }
+      .report-item-meta {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+      }
+
+      .backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 999;
+        backdrop-filter: blur(4px);
+        display: none;
+      }
+
+      /* Report Viewer (Modal) */
+      .report-viewer {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 80%;
+        max-width: 900px;
+        max-height: 90vh;
+        background: #1a1a24;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+      }
+      .report-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .report-header h3 {
+        font-size: 1.1rem;
+      }
+      .report-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .report-actions .btn {
+        padding: 8px 16px;
+        font-size: 0.85rem;
+      }
+      .report-content {
+        padding: 24px;
+        max-height: 600px;
+        overflow-y: auto;
+        line-height: 1.8;
+      }
+      .report-content h1,
+      .report-content h2,
+      .report-content h3 {
+        color: var(--text-primary);
+        margin: 20px 0 12px 0;
+      }
+      .report-content h1 {
+        font-size: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 8px;
+      }
+      .report-content h2 {
+        font-size: 1.25rem;
+      }
+      .report-content h3 {
+        font-size: 1.1rem;
+      }
+      .report-content p {
+        margin-bottom: 12px;
+        color: var(--text-secondary);
+      }
+      .report-content code {
+        background: var(--bg-glass);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      .report-content pre {
+        background: var(--bg-glass);
+        padding: 16px;
+        border-radius: var(--radius-md);
+        overflow-x: auto;
+        margin: 16px 0;
+      }
+      .report-content ul,
+      .report-content ol {
+        margin-left: 24px;
+        margin-bottom: 12px;
+      }
+      .report-content li {
+        margin-bottom: 4px;
+        color: var(--text-secondary);
+      }
+      .report-content hr {
+        border: none;
+        border-top: 1px solid var(--border-color);
+        margin: 24px 0;
+      }
+      .report-content strong {
+        color: var(--text-primary);
+      }
+      .report-content img {
+        max-width: 100%;
+        border-radius: var(--radius-md);
+        margin: 16px 0;
+      }
+
+      /* Stats Bar */
+      .stats-bar {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .stat-item {
+        flex: 1;
+        min-width: 100px;
+        background: var(--bg-glass);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        text-align: center;
+      }
+      .stat-item.success {
+        border-color: var(--success);
+        background: rgba(34, 197, 94, 0.1);
+      }
+      .stat-item.failed {
+        border-color: var(--error);
+        background: rgba(239, 68, 68, 0.1);
+      }
+      .stat-value {
+        display: block;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+      .stat-item.success .stat-value {
+        color: var(--success);
+      }
+      .stat-item.failed .stat-value {
+        color: var(--error);
+      }
+      .stat-label {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+      }
+
+      /* Filter Bar */
+      .filter-bar {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .filter-bar select {
+        padding: 10px 16px;
+        border-radius: var(--radius-md);
+        background: var(--bg-glass);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      .filter-bar select:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+      }
+
+      /* History Item */
+      .history-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        background: var(--bg-glass);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        margin-bottom: 12px;
+        transition: all 0.2s ease;
+      }
+      .history-item:hover {
+        border-color: var(--accent-primary);
+      }
+      .history-item.success {
+        border-left: 4px solid var(--success);
+      }
+      .history-item.failed {
+        border-left: 4px solid var(--error);
+      }
+      .history-item-info {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex: 1;
+      }
+      .history-item-icon {
+        font-size: 2rem;
+      }
+      .history-item-details {
+        flex: 1;
+      }
+      .history-item-name {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .history-item-meta {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .history-item-meta .topic {
+        background: var(--accent-gradient);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+      }
+      .history-item-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .history-item-actions .btn {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 24px 16px;
+        }
         .header h1 {
-            font-size: 2.5rem; font-weight: 700;
-            background: var(--accent-gradient);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text; margin-bottom: 12px;
+          font-size: 1.75rem;
         }
-        .header p { color: var(--text-secondary); font-size: 1.1rem; }
-
-        .status-bar {
-            display: flex; align-items: center; justify-content: center; gap: 12px;
-            margin-bottom: 32px; padding: 12px 24px;
-            background: var(--bg-glass); border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg); backdrop-filter: blur(10px);
-        }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); animation: pulse 2s infinite; }
-        .status-dot.error { background: var(--error); animation: none; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-        /* Mode Tabs */
-        .mode-tabs {
-            display: flex; gap: 8px; margin-bottom: 24px;
-            background: var(--bg-card); padding: 8px;
-            border-radius: var(--radius-lg); border: 1px solid var(--border-color);
-        }
-        .mode-tab {
-            flex: 1; padding: 14px 24px; border: none; border-radius: var(--radius-md);
-            font-size: 1rem; font-weight: 600; cursor: pointer;
-            background: transparent; color: var(--text-secondary);
-            transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .mode-tab:hover { background: var(--bg-glass); color: var(--text-primary); }
-        .mode-tab.active {
-            background: var(--accent-gradient); color: white;
-            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
-        }
-
-        /* Folder Section */
-        .folder-section {
-            background: var(--bg-card); border: 1px solid var(--border-color);
-            border-radius: var(--radius-xl); padding: 32px; margin-bottom: 32px;
-        }
-        .folder-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 20px; flex-wrap: wrap; gap: 16px;
-        }
-        .folder-info { display: flex; align-items: center; gap: 12px; }
-        .folder-icon { font-size: 2rem; }
-        .folder-path {
-            font-family: monospace; font-size: 0.85rem; color: var(--text-secondary);
-            background: var(--bg-glass); padding: 8px 16px; border-radius: var(--radius-sm);
-        }
-        .folder-actions { display: flex; gap: 12px; }
-
-        /* Upload zone */
         .upload-zone {
-            background: var(--bg-card); border: 2px dashed var(--border-color);
-            border-radius: var(--radius-xl); padding: 60px 40px; text-align: center;
-            transition: all 0.3s ease; cursor: pointer; margin-bottom: 32px;
+          padding: 40px 20px;
         }
-        .upload-zone:hover, .upload-zone.dragover {
-            border-color: var(--accent-primary);
-            background: rgba(99, 102, 241, 0.05);
-            box-shadow: var(--shadow-glow);
+        .file-grid {
+          grid-template-columns: repeat(2, 1fr);
         }
-        .upload-zone.has-files { border-style: solid; border-color: var(--success); background: rgba(34, 197, 94, 0.05); }
-        .upload-icon { font-size: 4rem; margin-bottom: 20px; }
-        .upload-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; }
-        .upload-subtitle { color: var(--text-secondary); font-size: 0.9rem; }
-
-        /* File preview grid */
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; margin-bottom: 32px; }
-        .file-card {
-            background: var(--bg-card); border: 1px solid var(--border-color);
-            border-radius: var(--radius-md); padding: 12px; text-align: center;
-            transition: all 0.2s ease;
+        .actions,
+        .folder-actions {
+          flex-direction: column;
         }
-        .file-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
-        .file-card:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
-        .file-card img { width: 100%; height: 100px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
-        .file-card .filename { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-card .status-icon { font-size: 1.5rem; margin-top: 4px; }
-
-        /* Empty state */
-        .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
-        .empty-state .icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
-
-        /* Actions */
-        .actions { display: flex; gap: 16px; justify-content: center; margin-bottom: 48px; }
         .btn {
-            padding: 14px 32px; border: none; border-radius: var(--radius-md);
-            font-size: 1rem; font-weight: 600; cursor: pointer;
-            transition: all 0.2s ease; display: flex; align-items: center; gap: 8px;
+          width: 100%;
+          justify-content: center;
         }
-        .btn-primary { background: var(--accent-gradient); color: white; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3); }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(99, 102, 241, 0.4); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .btn-secondary { background: var(--bg-glass); color: var(--text-primary); border: 1px solid var(--border-color); }
-        .btn-secondary:hover { background: var(--bg-card); }
-
-        /* Progress section */
-        .progress-section { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-xl); padding: 32px; margin-bottom: 32px; display: none; }
-        .progress-section.active { display: block; }
-        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .progress-title { font-size: 1.25rem; font-weight: 600; }
-        .progress-stats { color: var(--text-secondary); }
-        .progress-bar-container { background: rgba(255, 255, 255, 0.1); border-radius: var(--radius-sm); height: 8px; overflow: hidden; margin-bottom: 24px; }
-        .progress-bar { height: 100%; background: var(--accent-gradient); border-radius: var(--radius-sm); transition: width 0.3s ease; width: 0%; }
-
-        /* Results section */
-        .results-section { display: none; }
-        .results-section.active { display: block; }
-        .result-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; transition: all 0.2s ease; }
-        .result-card:hover { border-color: var(--accent-primary); }
-        .result-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-        .result-image { width: 80px; height: 80px; object-fit: cover; border-radius: var(--radius-md); }
-        .result-info h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
-        .result-info .meta { color: var(--text-secondary); font-size: 0.85rem; }
-        .result-solution { background: rgba(255, 255, 255, 0.02); border-radius: var(--radius-md); padding: 20px; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7; color: var(--text-secondary); }
-        .result-solution strong { color: var(--text-primary); }
-
-        /* KaTeX Math Styling */
-        .result-solution .katex { font-size: 1.1em; color: var(--text-primary); }
-        .result-solution .katex-display { margin: 16px 0; padding: 16px; background: rgba(99, 102, 241, 0.1); border-radius: var(--radius-sm); border-left: 3px solid var(--accent-primary); overflow-x: auto; }
-        .result-solution .katex-display > .katex { text-align: left; }
-
-        /* Completion banner */
-        .completion-banner { background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: var(--radius-xl); padding: 32px; text-align: center; margin-bottom: 32px; display: none; }
-        .completion-banner.active { display: block; }
-        .completion-banner h2 { color: var(--success); font-size: 1.5rem; margin-bottom: 8px; }
-        .completion-banner p { color: var(--text-secondary); }
-
-        #fileInput { display: none; }
-        .spinner { width: 20px; height: 20px; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Report List */
-        .report-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: 12px; cursor: pointer; transition: all 0.2s ease; }
-        .report-item:hover { border-color: var(--accent-primary); transform: translateX(4px); }
-        .report-item-info { display: flex; align-items: center; gap: 12px; }
-        .report-item-icon { font-size: 1.5rem; }
-        .report-item-name { font-weight: 600; }
-        .report-item-meta { font-size: 0.8rem; color: var(--text-secondary); }
-        
-        .backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 999;
-            backdrop-filter: blur(4px);
-            display: none;
+        .mode-tabs {
+          flex-direction: column;
         }
-        
-        /* Report Viewer (Modal) */
-        .report-viewer { 
-            position: fixed; 
-            top: 50%; 
-            left: 50%; 
-            transform: translate(-50%, -50%); 
-            width: 80%; 
-            max-width: 900px; 
-            max-height: 90vh; 
-            background: #1a1a24; 
-            border: 1px solid var(--border-color); 
-            border-radius: var(--radius-xl); 
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
-            z-index: 1000; 
-            display: flex; 
-            flex-direction: column; 
-        }
-        .report-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
-        .report-header h3 { font-size: 1.1rem; }
-        .report-actions { display: flex; gap: 8px; }
-        .report-actions .btn { padding: 8px 16px; font-size: 0.85rem; }
-        .report-content { padding: 24px; max-height: 600px; overflow-y: auto; line-height: 1.8; }
-        .report-content h1, .report-content h2, .report-content h3 { color: var(--text-primary); margin: 20px 0 12px 0; }
-        .report-content h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-        .report-content h2 { font-size: 1.25rem; }
-        .report-content h3 { font-size: 1.1rem; }
-        .report-content p { margin-bottom: 12px; color: var(--text-secondary); }
-        .report-content code { background: var(--bg-glass); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-        .report-content pre { background: var(--bg-glass); padding: 16px; border-radius: var(--radius-md); overflow-x: auto; margin: 16px 0; }
-        .report-content ul, .report-content ol { margin-left: 24px; margin-bottom: 12px; }
-        .report-content li { margin-bottom: 4px; color: var(--text-secondary); }
-        .report-content hr { border: none; border-top: 1px solid var(--border-color); margin: 24px 0; }
-        .report-content strong { color: var(--text-primary); }
-        .report-content img { max-width: 100%; border-radius: var(--radius-md); margin: 16px 0; }
-
-        /* Stats Bar */
-        .stats-bar { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-        .stat-item { flex: 1; min-width: 100px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; text-align: center; }
-        .stat-item.success { border-color: var(--success); background: rgba(34, 197, 94, 0.1); }
-        .stat-item.failed { border-color: var(--error); background: rgba(239, 68, 68, 0.1); }
-        .stat-value { display: block; font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
-        .stat-item.success .stat-value { color: var(--success); }
-        .stat-item.failed .stat-value { color: var(--error); }
-        .stat-label { font-size: 0.8rem; color: var(--text-secondary); }
-
-        /* Filter Bar */
-        .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-        .filter-bar select { padding: 10px 16px; border-radius: var(--radius-md); background: var(--bg-glass); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 0.9rem; cursor: pointer; }
-        .filter-bar select:focus { outline: none; border-color: var(--accent-primary); }
-
-        /* History Item */
-        .history-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--bg-glass); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: 12px; transition: all 0.2s ease; }
-        .history-item:hover { border-color: var(--accent-primary); }
-        .history-item.success { border-left: 4px solid var(--success); }
-        .history-item.failed { border-left: 4px solid var(--error); }
-        .history-item-info { display: flex; align-items: center; gap: 16px; flex: 1; }
-        .history-item-icon { font-size: 2rem; }
-        .history-item-details { flex: 1; }
-        .history-item-name { font-weight: 600; margin-bottom: 4px; }
-        .history-item-meta { font-size: 0.8rem; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
-        .history-item-meta .topic { background: var(--accent-gradient); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; }
-        .history-item-actions { display: flex; gap: 8px; }
-        .history-item-actions .btn { padding: 8px 14px; font-size: 0.85rem; }
-
-        @media (max-width: 768px) {
-            .container { padding: 24px 16px; }
-            .header h1 { font-size: 1.75rem; }
-            .upload-zone { padding: 40px 20px; }
-            .file-grid { grid-template-columns: repeat(2, 1fr); }
-            .actions, .folder-actions { flex-direction: column; }
-            .btn { width: 100%; justify-content: center; }
-            .mode-tabs { flex-direction: column; }
-        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="bg-decoration"></div>
-    
+
     <div class="container">
-        <header class="header">
-            <h1>🧠 Gemini Question Solver</h1>
-            <p>Soru fotoğraflarını yükle veya klasörden tara, paralel olarak çöz</p>
-        </header>
+      <header class="header">
+        <h1>🧠 Gemini Question Solver</h1>
+        <p>Soru fotoğraflarını yükle veya klasörden tara, paralel olarak çöz</p>
+      </header>
 
-        <div class="status-bar">
-            <div class="status-dot" id="statusDot"></div>
-            <span id="statusText">API bağlantısı kontrol ediliyor...</span>
+      <div class="status-bar">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">API bağlantısı kontrol ediliyor...</span>
+      </div>
+
+      <!-- Mode Tabs -->
+      <div class="mode-tabs">
+        <button
+          class="mode-tab active"
+          id="tabFolder"
+          onclick="switchMode('folder')"
+        >
+          📁 Klasörden Tara
+        </button>
+        <button class="mode-tab" id="tabUpload" onclick="switchMode('upload')">
+          📤 Dosya Yükle
+        </button>
+        <button
+          class="mode-tab"
+          id="tabReports"
+          onclick="switchMode('reports')"
+        >
+          📄 Raporlar
+        </button>
+        <button
+          class="mode-tab"
+          id="tabHistory"
+          onclick="switchMode('history')"
+        >
+          📚 Geçmiş
+        </button>
+      </div>
+
+      <!-- Folder Mode -->
+      <div id="modeFolder">
+        <!-- Topic Folders Sidebar -->
+        <div class="topic-folders-bar" id="topicFoldersBar" style="display: none; margin-bottom: 20px;">
+          <div style="font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            📚 Konu Klasörleri
+            <button class="btn btn-secondary" onclick="loadTopicFolders()" style="padding: 4px 8px; font-size: 12px;">🔄</button>
+          </div>
+          <div class="topic-folders-list" id="topicFoldersList" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
         </div>
 
-        <!-- Mode Tabs -->
-        <div class="mode-tabs">
-            <button class="mode-tab active" id="tabFolder" onclick="switchMode('folder')">
-                📁 Klasörden Tara
+        <div class="folder-section">
+          <div class="folder-header">
+            <div class="folder-info">
+              <span class="folder-icon">📂</span>
+              <div>
+                <div style="font-weight: 600; margin-bottom: 4px">
+                  Questions Klasörü
+                </div>
+                <code class="folder-path" id="folderPath">Yükleniyor...</code>
+              </div>
+            </div>
+            <div class="folder-actions">
+              <button class="btn btn-secondary" onclick="scanFolder()">
+                🔄 Yenile
+              </button>
+              <button class="btn btn-secondary" onclick="selectAllFiles()">
+                ✅ Tümünü Seç
+              </button>
+              <button class="btn btn-secondary" onclick="clearSelection()">
+                ❎ Seçimi Temizle
+              </button>
+              <button
+                class="btn btn-primary"
+                id="solveSelectedBtn"
+                onclick="solveSelectedFiles()"
+                disabled
+              >
+                ✨ Seçilenleri Çöz
+              </button>
+              <button
+                class="btn btn-primary"
+                id="solveFolderBtn"
+                onclick="solveFromFolder()"
+              >
+                🚀 Tümünü Çöz
+              </button>
+            </div>
+          </div>
+          <div class="selection-info hidden" id="selectionInfo">
+            <span>🎯 Seçilen:</span>
+            <span class="selection-count" id="selectionCount">0 soru</span>
+          </div>
+          <div class="file-grid" id="folderFileGrid"></div>
+          <div class="empty-state" id="emptyState" style="display: none">
+            <div class="icon">📭</div>
+            <div>Klasörde soru fotoğrafı bulunamadı</div>
+            <div style="font-size: 0.85rem; margin-top: 8px">
+              questions/ klasörüne JPEG veya PNG dosyaları ekleyin
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Mode -->
+      <div id="modeUpload" style="display: none">
+        <div class="upload-zone" id="uploadZone">
+          <div class="upload-icon">📷</div>
+          <div class="upload-title">Soru Fotoğraflarını Sürükle & Bırak</div>
+          <div class="upload-subtitle">
+            veya tıkla ve dosyaları seç (JPEG, PNG)
+          </div>
+        </div>
+        <input type="file" id="fileInput" multiple accept="image/*" />
+        <div class="file-grid" id="uploadFileGrid"></div>
+        <div class="actions" id="uploadActions" style="display: none">
+          <button class="btn btn-secondary" onclick="clearUpload()">
+            🗑️ Temizle
+          </button>
+          <button
+            class="btn btn-primary"
+            id="solveUploadBtn"
+            onclick="solveFromUpload()"
+          >
+            🚀 Soruları Çöz
+          </button>
+        </div>
+      </div>
+
+      <!-- Reports Mode -->
+      <div id="modeReports" style="display: none">
+        <div class="folder-section">
+          <div class="folder-header">
+            <div class="folder-info">
+              <span class="folder-icon">📄</span>
+              <div>
+                <div style="font-weight: 600; margin-bottom: 4px">
+                  Çözüm Raporları
+                </div>
+                <code class="folder-path" id="outputPath">output/</code>
+              </div>
+            </div>
+            <div class="folder-actions">
+              <button class="btn btn-secondary" onclick="loadReports()">
+                🔄 Yenile
+              </button>
+            </div>
+          </div>
+          <div id="reportsList"></div>
+          <div class="empty-state" id="emptyReports" style="display: none">
+            <div class="icon">📭</div>
+            <div>Henüz rapor oluşturulmamış</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backdrop -->
+      <div class="backdrop" id="backdrop" onclick="closeReport()"></div>
+
+      <!-- Report Viewer (Global) -->
+      <div class="report-viewer" id="reportViewer" style="display: none">
+        <div class="report-header">
+          <h3 id="reportTitle">📄 Rapor</h3>
+          <div class="report-actions">
+            <button class="btn btn-primary" onclick="downloadPDF()">
+              📥 PDF İndir
             </button>
-            <button class="mode-tab" id="tabUpload" onclick="switchMode('upload')">
-                📤 Dosya Yükle
+            <button class="btn btn-secondary" onclick="downloadReport()">
+              ⬇️ MD İndir
             </button>
-            <button class="mode-tab" id="tabReports" onclick="switchMode('reports')">
-                📄 Raporlar
+            <button class="btn btn-secondary" onclick="closeReport()">
+              ✕ Kapat
             </button>
-            <button class="mode-tab" id="tabHistory" onclick="switchMode('history')">
-                📚 Geçmiş
+          </div>
+        </div>
+        <div class="report-content" id="reportContent"></div>
+      </div>
+
+      <!-- History Mode -->
+      <div id="modeHistory" style="display: none">
+        <div class="folder-section">
+          <!-- Stats Bar -->
+          <div class="stats-bar" id="statsBar">
+            <div class="stat-item">
+              <span class="stat-value" id="statTotal">0</span>
+              <span class="stat-label">Toplam</span>
+            </div>
+            <div class="stat-item success">
+              <span class="stat-value" id="statSuccess">0</span>
+              <span class="stat-label">Başarılı</span>
+            </div>
+            <div class="stat-item failed">
+              <span class="stat-value" id="statFailed">0</span>
+              <span class="stat-label">Başarısız</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="statRate">0%</span>
+              <span class="stat-label">Başarı</span>
+            </div>
+          </div>
+
+          <!-- Filter Bar -->
+          <div class="filter-bar">
+            <select id="filterStatus" onchange="loadHistory()">
+              <option value="">Tüm Durumlar</option>
+              <option value="success">✅ Başarılı</option>
+              <option value="failed">❌ Başarısız</option>
+            </select>
+            <select id="filterTopic" onchange="loadHistory()">
+              <option value="">Tüm Konular</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadHistory()">
+              🔄 Yenile
             </button>
+            <button
+              class="btn btn-primary"
+              id="retryAllBtn"
+              onclick="retryAllFailed()"
+            >
+              🔄 Tümünü Tekrar Dene
+            </button>
+            <button class="btn btn-secondary" onclick="archiveSuccessful()">
+              📦 Başarılıları Arşivle
+            </button>
+            <button
+              class="btn btn-secondary"
+              style="border-color: var(--error); color: var(--error)"
+              onclick="deleteAllQuestions()"
+            >
+              🗑️ Tümünü Sil
+            </button>
+          </div>
+
+          <!-- Questions List -->
+          <div id="historyList"></div>
+          <div class="empty-state" id="emptyHistory" style="display: none">
+            <div class="icon">📭</div>
+            <div>Henüz soru çözülmemiş</div>
+          </div>
         </div>
+      </div>
 
-        <!-- Folder Mode -->
-        <div id="modeFolder">
-            <div class="folder-section">
-                <div class="folder-header">
-                    <div class="folder-info">
-                        <span class="folder-icon">📂</span>
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 4px;">Questions Klasörü</div>
-                            <code class="folder-path" id="folderPath">Yükleniyor...</code>
-                        </div>
-                    </div>
-                    <div class="folder-actions">
-                        <button class="btn btn-secondary" onclick="scanFolder()">🔄 Yenile</button>
-                        <button class="btn btn-primary" id="solveFolderBtn" onclick="solveFromFolder()">
-                            🚀 Soruları Çöz
-                        </button>
-                    </div>
-                </div>
-                <div class="file-grid" id="folderFileGrid"></div>
-                <div class="empty-state" id="emptyState" style="display: none;">
-                    <div class="icon">📭</div>
-                    <div>Klasörde soru fotoğrafı bulunamadı</div>
-                    <div style="font-size: 0.85rem; margin-top: 8px;">
-                        questions/ klasörüne JPEG veya PNG dosyaları ekleyin
-                    </div>
-                </div>
-            </div>
+      <!-- Progress Section -->
+      <div class="progress-section" id="progressSection">
+        <div class="progress-header">
+          <span class="progress-title">🧠 İşleniyor...</span>
+          <span class="progress-stats" id="progressStats">0 / 0</span>
         </div>
-
-        <!-- Upload Mode -->
-        <div id="modeUpload" style="display: none;">
-            <div class="upload-zone" id="uploadZone">
-                <div class="upload-icon">📷</div>
-                <div class="upload-title">Soru Fotoğraflarını Sürükle & Bırak</div>
-                <div class="upload-subtitle">veya tıkla ve dosyaları seç (JPEG, PNG)</div>
-            </div>
-            <input type="file" id="fileInput" multiple accept="image/*">
-            <div class="file-grid" id="uploadFileGrid"></div>
-            <div class="actions" id="uploadActions" style="display: none;">
-                <button class="btn btn-secondary" onclick="clearUpload()">🗑️ Temizle</button>
-                <button class="btn btn-primary" id="solveUploadBtn" onclick="solveFromUpload()">🚀 Soruları Çöz</button>
-            </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progressBar"></div>
         </div>
+      </div>
 
-        <!-- Reports Mode -->
-        <div id="modeReports" style="display: none;">
-            <div class="folder-section">
-                <div class="folder-header">
-                    <div class="folder-info">
-                        <span class="folder-icon">📄</span>
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 4px;">Çözüm Raporları</div>
-                            <code class="folder-path" id="outputPath">output/</code>
-                        </div>
-                    </div>
-                    <div class="folder-actions">
-                        <button class="btn btn-secondary" onclick="loadReports()">🔄 Yenile</button>
-                    </div>
-                </div>
-                <div id="reportsList"></div>
-                <div class="empty-state" id="emptyReports" style="display: none;">
-                    <div class="icon">📭</div>
-                    <div>Henüz rapor oluşturulmamış</div>
-                </div>
-            </div>
-        </div>
+      <!-- Completion Banner -->
+      <div class="completion-banner" id="completionBanner">
+        <h2>✅ Tamamlandı!</h2>
+        <p id="completionText">Tüm sorular başarıyla çözüldü</p>
+      </div>
 
-        <!-- Backdrop -->
-        <div class="backdrop" id="backdrop" onclick="closeReport()"></div>
-
-        <!-- Report Viewer (Global) -->
-        <div class="report-viewer" id="reportViewer" style="display: none;">
-            <div class="report-header">
-                <h3 id="reportTitle">📄 Rapor</h3>
-                <div class="report-actions">
-                    <button class="btn btn-secondary" onclick="downloadReport()">⬇️ İndir</button>
-                    <button class="btn btn-secondary" onclick="closeReport()">✕ Kapat</button>
-                </div>
-            </div>
-            <div class="report-content" id="reportContent"></div>
-        </div>
-
-        <!-- History Mode -->
-        <div id="modeHistory" style="display: none;">
-            <div class="folder-section">
-                <!-- Stats Bar -->
-                <div class="stats-bar" id="statsBar">
-                    <div class="stat-item">
-                        <span class="stat-value" id="statTotal">0</span>
-                        <span class="stat-label">Toplam</span>
-                    </div>
-                    <div class="stat-item success">
-                        <span class="stat-value" id="statSuccess">0</span>
-                        <span class="stat-label">Başarılı</span>
-                    </div>
-                    <div class="stat-item failed">
-                        <span class="stat-value" id="statFailed">0</span>
-                        <span class="stat-label">Başarısız</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value" id="statRate">0%</span>
-                        <span class="stat-label">Başarı</span>
-                    </div>
-                </div>
-
-                <!-- Filter Bar -->
-                <div class="filter-bar">
-                    <select id="filterStatus" onchange="loadHistory()">
-                        <option value="">Tüm Durumlar</option>
-                        <option value="success">✅ Başarılı</option>
-                        <option value="failed">❌ Başarısız</option>
-                    </select>
-                    <select id="filterTopic" onchange="loadHistory()">
-                        <option value="">Tüm Konular</option>
-                    </select>
-                    <button class="btn btn-secondary" onclick="loadHistory()">🔄 Yenile</button>
-                    <button class="btn btn-primary" id="retryAllBtn" onclick="retryAllFailed()">🔄 Tümünü Tekrar Dene</button>
-                    <button class="btn btn-secondary" onclick="archiveSuccessful()">📦 Başarılıları Arşivle</button>
-                    <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteAllQuestions()">🗑️ Tümünü Sil</button>
-                </div>
-
-                <!-- Questions List -->
-                <div id="historyList"></div>
-                <div class="empty-state" id="emptyHistory" style="display: none;">
-                    <div class="icon">📭</div>
-                    <div>Henüz soru çözülmemiş</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Progress Section -->
-        <div class="progress-section" id="progressSection">
-            <div class="progress-header">
-                <span class="progress-title">🧠 İşleniyor...</span>
-                <span class="progress-stats" id="progressStats">0 / 0</span>
-            </div>
-            <div class="progress-bar-container">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
-        </div>
-
-        <!-- Completion Banner -->
-        <div class="completion-banner" id="completionBanner">
-            <h2>✅ Tamamlandı!</h2>
-            <p id="completionText">Tüm sorular başarıyla çözüldü</p>
-        </div>
-
-        <!-- Results Section -->
-        <div class="results-section" id="resultsSection"></div>
+      <!-- Results Section -->
+      <div class="results-section" id="resultsSection"></div>
     </div>
 
     <script>
-        // State
-        let currentMode = 'folder';
-        let uploadedFiles = [];
-        let folderFiles = [];
-        let sessionId = null;
+      // State
+      let currentMode = "folder";
+      let uploadedFiles = [];
+      let folderFiles = [];
+      let selectedFiles = new Set();
+      let sessionId = null;
 
-        // DOM Elements
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const folderPath = document.getElementById('folderPath');
-        const folderFileGrid = document.getElementById('folderFileGrid');
-        const uploadFileGrid = document.getElementById('uploadFileGrid');
-        const uploadZone = document.getElementById('uploadZone');
-        const fileInput = document.getElementById('fileInput');
-        const uploadActions = document.getElementById('uploadActions');
-        const progressSection = document.getElementById('progressSection');
-        const progressBar = document.getElementById('progressBar');
-        const progressStats = document.getElementById('progressStats');
-        const completionBanner = document.getElementById('completionBanner');
-        const completionText = document.getElementById('completionText');
-        const resultsSection = document.getElementById('resultsSection');
-        const emptyState = document.getElementById('emptyState');
-        const solveFolderBtn = document.getElementById('solveFolderBtn');
-        const solveUploadBtn = document.getElementById('solveUploadBtn');
+      // DOM Elements
+      const statusDot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      const folderPath = document.getElementById("folderPath");
+      const folderFileGrid = document.getElementById("folderFileGrid");
+      const uploadFileGrid = document.getElementById("uploadFileGrid");
+      const uploadZone = document.getElementById("uploadZone");
+      const fileInput = document.getElementById("fileInput");
+      const uploadActions = document.getElementById("uploadActions");
+      const progressSection = document.getElementById("progressSection");
+      const progressBar = document.getElementById("progressBar");
+      const progressStats = document.getElementById("progressStats");
+      const completionBanner = document.getElementById("completionBanner");
+      const completionText = document.getElementById("completionText");
+      const resultsSection = document.getElementById("resultsSection");
+      const emptyState = document.getElementById("emptyState");
+      const solveFolderBtn = document.getElementById("solveFolderBtn");
+      const solveUploadBtn = document.getElementById("solveUploadBtn");
 
-        // Switch between modes
-        function switchMode(mode) {
-            currentMode = mode;
-            document.getElementById('tabFolder').classList.toggle('active', mode === 'folder');
-            document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
-            document.getElementById('tabReports').classList.toggle('active', mode === 'reports');
-            document.getElementById('tabHistory').classList.toggle('active', mode === 'history');
-            document.getElementById('modeFolder').style.display = mode === 'folder' ? 'block' : 'none';
-            document.getElementById('modeUpload').style.display = mode === 'upload' ? 'block' : 'none';
-            document.getElementById('modeReports').style.display = mode === 'reports' ? 'block' : 'none';
-            document.getElementById('modeHistory').style.display = mode === 'history' ? 'block' : 'none';
-            
-            // Load data when switching tabs
-            if (mode === 'reports') {
-                loadReports();
-            } else if (mode === 'history') {
-                loadHistory();
-                loadTopics();
-            }
-            
-            // Reset results
-            resetResults();
+      // Switch between modes
+      function switchMode(mode) {
+        currentMode = mode;
+        document
+          .getElementById("tabFolder")
+          .classList.toggle("active", mode === "folder");
+        document
+          .getElementById("tabUpload")
+          .classList.toggle("active", mode === "upload");
+        document
+          .getElementById("tabReports")
+          .classList.toggle("active", mode === "reports");
+        document
+          .getElementById("tabHistory")
+          .classList.toggle("active", mode === "history");
+        document.getElementById("modeFolder").style.display =
+          mode === "folder" ? "block" : "none";
+        document.getElementById("modeUpload").style.display =
+          mode === "upload" ? "block" : "none";
+        document.getElementById("modeReports").style.display =
+          mode === "reports" ? "block" : "none";
+        document.getElementById("modeHistory").style.display =
+          mode === "history" ? "block" : "none";
+
+        // Load data when switching tabs
+        if (mode === "reports") {
+          loadReports();
+        } else if (mode === "history") {
+          loadHistory();
+          loadTopics();
         }
 
-        // Check API status
-        async function checkStatus() {
-            try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                
-                if (data.api_key_set) {
-                    statusDot.classList.remove('error');
-                    statusText.textContent = 'API bağlantısı hazır ✓';
-                } else {
-                    statusDot.classList.add('error');
-                    statusText.textContent = '⚠️ GEMINI_API_KEY ayarlanmamış';
-                }
-                
-                if (data.questions_dir) {
-                    folderPath.textContent = data.questions_dir;
-                }
-            } catch (error) {
-                statusDot.classList.add('error');
-                statusText.textContent = '❌ Sunucuya bağlanılamadı';
-            }
-        }
+        // Reset results
+        resetResults();
+      }
 
-        // Scan folder for images
-        async function scanFolder() {
-            folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><div class="spinner"></div> Klasör taranıyor...</div>';
-            emptyState.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/scan-folder');
-                const data = await response.json();
-                
-                folderFiles = data.files;
-                folderPath.textContent = data.folder;
-                
-                if (folderFiles.length === 0) {
-                    folderFileGrid.innerHTML = '';
-                    emptyState.style.display = 'block';
-                    solveFolderBtn.disabled = true;
-                } else {
-                    emptyState.style.display = 'none';
-                    solveFolderBtn.disabled = false;
-                    renderFolderGrid();
-                }
-            } catch (error) {
-                folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Klasör taranamadı</div>';
-            }
-        }
+      // Check API status
+      async function checkStatus() {
+        try {
+          const response = await fetch("/api/status");
+          const data = await response.json();
 
-        // Render folder file grid
-        function renderFolderGrid() {
-            folderFileGrid.innerHTML = folderFiles.map((file, index) => `
-                <div class="file-card" id="folder-file-${index}">
-                    <img src="/api/image/${encodeURIComponent(file.filename)}" alt="${file.filename}">
+          if (data.api_key_set) {
+            statusDot.classList.remove("error");
+            statusText.textContent = "API bağlantısı hazır ✓";
+          } else {
+            statusDot.classList.add("error");
+            statusText.textContent = "⚠️ GEMINI_API_KEY ayarlanmamış";
+          }
+
+          if (data.questions_dir) {
+            folderPath.textContent = data.questions_dir;
+          }
+        } catch (error) {
+          statusDot.classList.add("error");
+          statusText.textContent = "❌ Sunucuya bağlanılamadı";
+        }
+      }
+
+      // Scan folder for images
+      async function scanFolder() {
+        folderFileGrid.innerHTML =
+          '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><div class="spinner"></div> Klasör taranıyor...</div>';
+        emptyState.style.display = "none";
+
+        try {
+          const response = await fetch("/api/scan-folder");
+          const data = await response.json();
+
+          folderFiles = data.files;
+          folderPath.textContent = data.folder;
+
+          if (folderFiles.length === 0) {
+            folderFileGrid.innerHTML = "";
+            emptyState.style.display = "block";
+            solveFolderBtn.disabled = true;
+          } else {
+            emptyState.style.display = "none";
+            solveFolderBtn.disabled = false;
+            renderFolderGrid();
+          }
+          
+          // Load topic folders after scan
+          loadTopicFolders();
+        } catch (error) {
+          folderFileGrid.innerHTML =
+            '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Klasör taranamadı</div>';
+        }
+      }
+
+      let currentTopicFolder = null;
+      
+      async function loadTopicFolders() {
+        try {
+          const response = await fetch("/api/topic-folders");
+          const data = await response.json();
+          
+          const container = document.getElementById("topicFoldersList");
+          const bar = document.getElementById("topicFoldersBar");
+          
+          if (data.folders.length === 0) {
+            bar.style.display = "none";
+            return;
+          }
+          
+          bar.style.display = "block";
+          container.innerHTML = data.folders.map(folder => `
+            <button class="topic-folder-btn ${currentTopicFolder === folder.name ? 'active' : ''}" 
+                    onclick="selectTopicFolder('${folder.name}', ${folder.is_root})">
+              ${folder.is_root ? '📁' : '📚'} ${folder.name}
+              <span class="count">${folder.count}</span>
+            </button>
+          `).join('');
+        } catch (error) {
+          console.error("Topic folders error:", error);
+        }
+      }
+      
+      async function selectTopicFolder(topic, isRoot) {
+        currentTopicFolder = currentTopicFolder === topic ? null : topic;
+        
+        // Update active states
+        document.querySelectorAll('.topic-folder-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.textContent.includes(topic) && currentTopicFolder === topic);
+        });
+        
+        if (!currentTopicFolder) {
+          // Show root folder
+          scanFolder();
+          return;
+        }
+        
+        // Load topic folder files
+        try {
+          folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><div class="spinner"></div> Yükleniyor...</div>';
+          
+          const response = await fetch(`/api/topic-folder/${encodeURIComponent(topic)}`);
+          const data = await response.json();
+          
+          folderFiles = data.files;
+          folderPath.textContent = data.path;
+          
+          if (folderFiles.length === 0) {
+            folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">Bu klasörde dosya yok</div>';
+          } else {
+            renderFolderGrid();
+          }
+        } catch (error) {
+          folderFileGrid.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Klasör yüklenemedi</div>';
+        }
+      }
+
+
+      // Render folder file grid
+      function renderFolderGrid() {
+        folderFileGrid.innerHTML = folderFiles
+          .map((file, index) => {
+            const isSelected = selectedFiles.has(file.filename);
+            // Add topic parameter for subfolder images
+            const topicParam = currentTopicFolder && currentTopicFolder !== 'Yeni Sorular' ? `?topic=${encodeURIComponent(currentTopicFolder)}` : '';
+            return `
+                <div class="file-card ${isSelected ? "selected" : ""}" id="folder-file-${index}" onclick="toggleFileSelection('${file.filename}', ${index})">
+                    <div class="checkbox">${isSelected ? "✓" : ""}</div>
+                    <img src="/api/image/${encodeURIComponent(file.filename)}${topicParam}" alt="${file.filename}">
                     <div class="filename">${file.filename}</div>
                     <div class="status-icon" id="folder-status-${index}"></div>
                 </div>
-            `).join('');
+            `;
+          })
+          .join("");
+        updateSelectionUI();
+      }
+
+      // Toggle file selection
+      function toggleFileSelection(filename, index) {
+        if (selectedFiles.has(filename)) {
+          selectedFiles.delete(filename);
+        } else {
+          selectedFiles.add(filename);
         }
-
-        // Solve from folder
-        async function solveFromFolder() {
-            if (folderFiles.length === 0) return;
-            
-            solveFolderBtn.disabled = true;
-            solveFolderBtn.innerHTML = '<div class="spinner"></div> Başlatılıyor...';
-            resetResults();
-            
-            try {
-                const response = await fetch('/api/solve-folder', { method: 'POST' });
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Çözüm başlatılamadı');
-                }
-                
-                const data = await response.json();
-                sessionId = data.session_id;
-                
-                progressSection.classList.add('active');
-                solveFolderBtn.innerHTML = '⏳ İşleniyor...';
-                
-                pollProgress('folder');
-            } catch (error) {
-                alert('Hata: ' + error.message);
-                solveFolderBtn.disabled = false;
-                solveFolderBtn.innerHTML = '🚀 Soruları Çöz';
-            }
+        const card = document.getElementById(`folder-file-${index}`);
+        if (card) {
+          card.classList.toggle("selected", selectedFiles.has(filename));
+          card.querySelector(".checkbox").textContent = selectedFiles.has(
+            filename,
+          )
+            ? "✓"
+            : "";
         }
+        updateSelectionUI();
+      }
 
-        // Upload zone events
-        uploadZone.addEventListener('click', () => fileInput.click());
-        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-        uploadZone.addEventListener('drop', (e) => { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+      // Select all files
+      function selectAllFiles() {
+        folderFiles.forEach((file) => selectedFiles.add(file.filename));
+        renderFolderGrid();
+      }
 
-        function handleFiles(files) {
-            uploadedFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-            if (uploadedFiles.length === 0) { alert('Lütfen geçerli resim dosyaları seçin'); return; }
-            uploadZone.classList.add('has-files');
-            renderUploadGrid();
-            uploadActions.style.display = 'flex';
+      // Clear selection
+      function clearSelection() {
+        selectedFiles.clear();
+        renderFolderGrid();
+      }
+
+      // Update selection UI
+      function updateSelectionUI() {
+        const selectionInfo = document.getElementById("selectionInfo");
+        const selectionCount = document.getElementById("selectionCount");
+        const solveSelectedBtn = document.getElementById("solveSelectedBtn");
+
+        if (selectedFiles.size > 0) {
+          selectionInfo.classList.remove("hidden");
+          selectionCount.textContent = `${selectedFiles.size} soru`;
+          solveSelectedBtn.disabled = false;
+        } else {
+          selectionInfo.classList.add("hidden");
+          solveSelectedBtn.disabled = true;
         }
+      }
 
-        function renderUploadGrid() {
-            uploadFileGrid.innerHTML = uploadedFiles.map((file, index) => {
-                const url = URL.createObjectURL(file);
-                return `
+      // Solve selected files
+      async function solveSelectedFiles() {
+        if (selectedFiles.size === 0) return;
+
+        const solveSelectedBtn = document.getElementById("solveSelectedBtn");
+        solveSelectedBtn.disabled = true;
+        solveSelectedBtn.innerHTML =
+          '<div class="spinner"></div> Başlatılıyor...';
+        resetResults();
+
+        try {
+          const response = await fetch("/api/solve-selected", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filenames: Array.from(selectedFiles) }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Çözüm başlatılamadı");
+          }
+
+          const data = await response.json();
+          sessionId = data.session_id;
+
+          progressSection.classList.add("active");
+          solveSelectedBtn.innerHTML = "⏳ İşleniyor...";
+
+          pollProgress("folder");
+        } catch (error) {
+          alert("Hata: " + error.message);
+          solveSelectedBtn.disabled = false;
+          solveSelectedBtn.innerHTML = "✨ Seçilenleri Çöz";
+        }
+      }
+
+      // Solve from folder
+      async function solveFromFolder() {
+        if (folderFiles.length === 0) return;
+
+        solveFolderBtn.disabled = true;
+        solveFolderBtn.innerHTML =
+          '<div class="spinner"></div> Başlatılıyor...';
+        resetResults();
+
+        try {
+          const response = await fetch("/api/solve-folder", { method: "POST" });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Çözüm başlatılamadı");
+          }
+
+          const data = await response.json();
+          sessionId = data.session_id;
+
+          progressSection.classList.add("active");
+          solveFolderBtn.innerHTML = "⏳ İşleniyor...";
+
+          pollProgress("folder");
+        } catch (error) {
+          alert("Hata: " + error.message);
+          solveFolderBtn.disabled = false;
+          solveFolderBtn.innerHTML = "🚀 Soruları Çöz";
+        }
+      }
+
+      // Upload zone events
+      uploadZone.addEventListener("click", () => fileInput.click());
+      uploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadZone.classList.add("dragover");
+      });
+      uploadZone.addEventListener("dragleave", () =>
+        uploadZone.classList.remove("dragover"),
+      );
+      uploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove("dragover");
+        handleFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener("change", (e) => handleFiles(e.target.files));
+
+      function handleFiles(files) {
+        uploadedFiles = Array.from(files).filter((f) =>
+          f.type.startsWith("image/"),
+        );
+        if (uploadedFiles.length === 0) {
+          alert("Lütfen geçerli resim dosyaları seçin");
+          return;
+        }
+        uploadZone.classList.add("has-files");
+        renderUploadGrid();
+        uploadActions.style.display = "flex";
+      }
+
+      function renderUploadGrid() {
+        uploadFileGrid.innerHTML = uploadedFiles
+          .map((file, index) => {
+            const url = URL.createObjectURL(file);
+            return `
                     <div class="file-card" id="upload-file-${index}">
                         <img src="${url}" alt="${file.name}">
                         <div class="filename">${file.name}</div>
                         <div class="status-icon" id="upload-status-${index}"></div>
                     </div>
                 `;
-            }).join('');
-        }
+          })
+          .join("");
+      }
 
-        function clearUpload() {
-            uploadedFiles = [];
-            uploadFileGrid.innerHTML = '';
-            uploadActions.style.display = 'none';
-            uploadZone.classList.remove('has-files');
-            fileInput.value = '';
-            resetResults();
-        }
+      function clearUpload() {
+        uploadedFiles = [];
+        uploadFileGrid.innerHTML = "";
+        uploadActions.style.display = "none";
+        uploadZone.classList.remove("has-files");
+        fileInput.value = "";
+        resetResults();
+      }
 
-        async function solveFromUpload() {
-            if (uploadedFiles.length === 0) return;
-            
-            solveUploadBtn.disabled = true;
-            solveUploadBtn.innerHTML = '<div class="spinner"></div> Yükleniyor...';
-            resetResults();
-            
-            try {
-                const formData = new FormData();
-                uploadedFiles.forEach(file => formData.append('files', file));
-                
-                const uploadResponse = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!uploadResponse.ok) throw new Error('Dosya yükleme başarısız');
-                
-                const uploadData = await uploadResponse.json();
-                sessionId = uploadData.session_id;
-                
-                const solveResponse = await fetch(`/api/solve/${sessionId}`, { method: 'POST' });
-                if (!solveResponse.ok) {
-                    const error = await solveResponse.json();
-                    throw new Error(error.detail || 'Çözüm başlatılamadı');
-                }
-                
-                progressSection.classList.add('active');
-                solveUploadBtn.innerHTML = '⏳ İşleniyor...';
-                
-                pollProgress('upload');
-            } catch (error) {
-                alert('Hata: ' + error.message);
-                solveUploadBtn.disabled = false;
-                solveUploadBtn.innerHTML = '🚀 Soruları Çöz';
+      async function solveFromUpload() {
+        if (uploadedFiles.length === 0) return;
+
+        solveUploadBtn.disabled = true;
+        solveUploadBtn.innerHTML = '<div class="spinner"></div> Yükleniyor...';
+        resetResults();
+
+        try {
+          const formData = new FormData();
+          uploadedFiles.forEach((file) => formData.append("files", file));
+
+          const uploadResponse = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+          if (!uploadResponse.ok) throw new Error("Dosya yükleme başarısız");
+
+          const uploadData = await uploadResponse.json();
+          sessionId = uploadData.session_id;
+
+          const solveResponse = await fetch(`/api/solve/${sessionId}`, {
+            method: "POST",
+          });
+          if (!solveResponse.ok) {
+            const error = await solveResponse.json();
+            throw new Error(error.detail || "Çözüm başlatılamadı");
+          }
+
+          progressSection.classList.add("active");
+          solveUploadBtn.innerHTML = "⏳ İşleniyor...";
+
+          pollProgress("upload");
+        } catch (error) {
+          alert("Hata: " + error.message);
+          solveUploadBtn.disabled = false;
+          solveUploadBtn.innerHTML = "🚀 Soruları Çöz";
+        }
+      }
+
+      async function pollProgress(mode) {
+        if (!sessionId) return;
+
+        try {
+          const response = await fetch(`/api/progress/${sessionId}`);
+          const data = await response.json();
+
+          const percent = (data.progress / data.total) * 100;
+          progressBar.style.width = `${percent}%`;
+          progressStats.textContent = `${data.progress} / ${data.total}`;
+
+          // Update file status icons - match by filename
+          data.results.forEach((result) => {
+            // Find the correct index in folderFiles by filename
+            const fileIndex = folderFiles.findIndex(f => f.filename === result.filename);
+            if (fileIndex !== -1) {
+              const statusEl = document.getElementById(`${mode}-status-${fileIndex}`);
+              if (statusEl) statusEl.textContent = result.success ? "✅" : "❌";
             }
-        }
+          });
 
-        async function pollProgress(mode) {
-            if (!sessionId) return;
-            
-            try {
-                const response = await fetch(`/api/progress/${sessionId}`);
-                const data = await response.json();
-                
-                const percent = (data.progress / data.total) * 100;
-                progressBar.style.width = `${percent}%`;
-                progressStats.textContent = `${data.progress} / ${data.total}`;
-                
-                // Update file status icons
-                data.results.forEach((result, index) => {
-                    const statusEl = document.getElementById(`${mode}-status-${index}`);
-                    if (statusEl) statusEl.textContent = result.success ? '✅' : '❌';
-                });
-                
-                if (data.status === 'completed') {
-                    progressSection.classList.remove('active');
-                    completionBanner.classList.add('active');
-                    
-                    const successful = data.results.filter(r => r.success).length;
-                    completionText.textContent = `${successful} / ${data.total} soru başarıyla çözüldü`;
-                    
-                    renderResults(data.results, mode);
-                    
-                    if (mode === 'folder') {
-                        solveFolderBtn.disabled = false;
-                        solveFolderBtn.innerHTML = '🚀 Tekrar Çöz';
-                    } else {
-                        solveUploadBtn.disabled = false;
-                        solveUploadBtn.innerHTML = '🚀 Tekrar Çöz';
-                    }
-                } else if (data.status === 'error') {
-                    alert('Hata: ' + data.error);
-                    resetButtons();
-                    progressSection.classList.remove('active');
-                } else {
-                    setTimeout(() => pollProgress(mode), 1000);
-                }
-            } catch (error) {
-                console.error('Progress check error:', error);
-                setTimeout(() => pollProgress(mode), 2000);
+          if (data.status === "completed") {
+            progressSection.classList.remove("active");
+            completionBanner.classList.add("active");
+
+            const successful = data.results.filter((r) => r.success).length;
+            completionText.textContent = `${successful} / ${data.total} soru başarıyla çözüldü`;
+
+            renderResults(data.results, mode);
+
+            if (mode === "folder") {
+              solveFolderBtn.disabled = false;
+              solveFolderBtn.innerHTML = "🚀 Tümünü Çöz";
+              // Reset selected button too
+              const solveSelectedBtn = document.getElementById('solveSelectedBtn');
+              if (solveSelectedBtn) {
+                solveSelectedBtn.innerHTML = '✨ Seçilenleri Çöz';
+                solveSelectedBtn.disabled = selectedFiles.size === 0;
+              }
+            } else {
+              solveUploadBtn.disabled = false;
+              solveUploadBtn.innerHTML = "🚀 Tekrar Çöz";
             }
+          } else if (data.status === "error") {
+            alert("Hata: " + data.error);
+            resetButtons();
+            progressSection.classList.remove("active");
+          } else {
+            setTimeout(() => pollProgress(mode), 1000);
+          }
+        } catch (error) {
+          console.error("Progress check error:", error);
+          setTimeout(() => pollProgress(mode), 2000);
         }
+      }
 
-        function renderResults(results, mode) {
-            resultsSection.classList.add('active');
-            resultsSection.innerHTML = results.map((result, index) => {
-                let imgSrc;
-                if (mode === 'folder') {
-                    imgSrc = `/api/image/${encodeURIComponent(folderFiles[index]?.filename || result.filename)}`;
-                } else {
-                    imgSrc = URL.createObjectURL(uploadedFiles[index]);
-                }
-                return `
+      function renderResults(results, mode) {
+        resultsSection.classList.add("active");
+        resultsSection.innerHTML = results
+          .map((result, index) => {
+            let imgSrc;
+            if (mode === "folder") {
+              // Use the filename from result directly
+              imgSrc = `/api/image/${encodeURIComponent(result.filename)}`;
+            } else {
+              imgSrc = URL.createObjectURL(uploadedFiles[index]);
+            }
+            return `
                     <div class="result-card">
                         <div class="result-header">
                             <img src="${imgSrc}" alt="${result.filename}" class="result-image">
                             <div class="result-info">
                                 <h3>Soru ${index + 1}: ${result.filename}</h3>
                                 <div class="meta">
-                                    ${result.success ? '✅ Çözüldü' : '❌ Başarısız'} 
+                                    ${result.success ? "✅ Çözüldü" : "❌ Başarısız"} 
                                     • ${result.time_taken.toFixed(1)}s
                                 </div>
                             </div>
@@ -757,78 +1645,92 @@
                         </div>
                     </div>
                 `;
-            }).join('');
-            
-            // Render LaTeX formulas after DOM is updated
-            setTimeout(renderMath, 100);
-        }
+          })
+          .join("");
 
-        function formatSolution(text) {
-            // First apply basic markdown formatting
-            let formatted = text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\n/g, '<br>');
-            return formatted;
-        }
+        // Render LaTeX formulas after DOM is updated
+        setTimeout(renderMath, 100);
+      }
 
-        // Render LaTeX after results are displayed
-        function renderMath() {
-            if (typeof renderMathInElement !== 'undefined') {
-                renderMathInElement(resultsSection, {
-                    delimiters: [
-                        {left: '$$', right: '$$', display: true},
-                        {left: '$', right: '$', display: false},
-                        {left: '\\[', right: '\\]', display: true},
-                        {left: '\\(', right: '\\)', display: false}
-                    ],
-                    throwOnError: false,
-                    output: 'html'
-                });
-            }
-        }
+      function formatSolution(text) {
+        // First apply basic markdown formatting
+        let formatted = text
+          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+          .replace(/\n/g, "<br>");
+        return formatted;
+      }
 
-        function resetResults() {
-            progressSection.classList.remove('active');
-            completionBanner.classList.remove('active');
-            resultsSection.classList.remove('active');
-            resultsSection.innerHTML = '';
-            progressBar.style.width = '0%';
+      // Render LaTeX after results are displayed
+      function renderMath() {
+        if (typeof renderMathInElement !== "undefined") {
+          renderMathInElement(resultsSection, {
+            delimiters: [
+              { left: "$$", right: "$$", display: true },
+              { left: "$", right: "$", display: false },
+              { left: "\\[", right: "\\]", display: true },
+              { left: "\\(", right: "\\)", display: false },
+            ],
+            throwOnError: false,
+            output: "html",
+          });
         }
+      }
+
+      function resetResults() {
+        progressSection.classList.remove("active");
+        completionBanner.classList.remove("active");
+        resultsSection.classList.remove("active");
+        resultsSection.innerHTML = "";
+        progressBar.style.width = "0%";
+      }
 
         function resetButtons() {
             solveFolderBtn.disabled = false;
-            solveFolderBtn.innerHTML = '🚀 Soruları Çöz';
+            solveFolderBtn.innerHTML = '🚀 Tümünü Çöz';
             solveUploadBtn.disabled = false;
             solveUploadBtn.innerHTML = '🚀 Soruları Çöz';
+            const solveSelectedBtn = document.getElementById('solveSelectedBtn');
+            if (solveSelectedBtn) {
+                solveSelectedBtn.innerHTML = '✨ Seçilenleri Çöz';
+                solveSelectedBtn.disabled = selectedFiles.size === 0;
+            }
         }
 
-        // Reports functionality
-        let currentReportFilename = null;
-        
-        async function loadReports() {
-            const reportsList = document.getElementById('reportsList');
-            const emptyReports = document.getElementById('emptyReports');
-            const outputPath = document.getElementById('outputPath');
-            
-            reportsList.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Raporlar yükleniyor...</div>';
-            emptyReports.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/outputs');
-                const data = await response.json();
-                
-                outputPath.textContent = data.folder;
-                
-                if (data.reports.length === 0) {
-                    reportsList.innerHTML = '';
-                    emptyReports.style.display = 'block';
-                } else {
-                    emptyReports.style.display = 'none';
-                    reportsList.innerHTML = data.reports.map(report => {
-                        const date = new Date(report.modified);
-                        const dateStr = date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                        const sizeKB = (report.size / 1024).toFixed(1);
-                        return `
+      // Reports functionality
+      let currentReportFilename = null;
+
+      async function loadReports() {
+        const reportsList = document.getElementById("reportsList");
+        const emptyReports = document.getElementById("emptyReports");
+        const outputPath = document.getElementById("outputPath");
+
+        reportsList.innerHTML =
+          '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Raporlar yükleniyor...</div>';
+        emptyReports.style.display = "none";
+
+        try {
+          const response = await fetch("/api/outputs");
+          const data = await response.json();
+
+          outputPath.textContent = data.folder;
+
+          if (data.reports.length === 0) {
+            reportsList.innerHTML = "";
+            emptyReports.style.display = "block";
+          } else {
+            emptyReports.style.display = "none";
+            reportsList.innerHTML = data.reports
+              .map((report) => {
+                const date = new Date(report.modified);
+                const dateStr =
+                  date.toLocaleDateString("tr-TR") +
+                  " " +
+                  date.toLocaleTimeString("tr-TR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                const sizeKB = (report.size / 1024).toFixed(1);
+                return `
                             <div class="report-item" onclick="viewReport('${report.filename}')">
                                 <div class="report-item-info">
                                     <span class="report-item-icon">📄</span>
@@ -840,347 +1742,466 @@
                                 <span>→</span>
                             </div>
                         `;
-                    }).join('');
-                }
-            } catch (error) {
-                reportsList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Raporlar yüklenemedi</div>';
-            }
+              })
+              .join("");
+          }
+        } catch (error) {
+          reportsList.innerHTML =
+            '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Raporlar yüklenemedi</div>';
         }
+      }
 
-        async function viewReport(filename) {
-            const reportViewer = document.getElementById('reportViewer');
-            const reportTitle = document.getElementById('reportTitle');
-            const reportContent = document.getElementById('reportContent');
-            const backdrop = document.getElementById('backdrop');
-            
-            currentReportFilename = filename;
-            reportTitle.textContent = '📄 ' + filename;
-            reportContent.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div> Rapor yükleniyor...</div>';
-            
-            // Show modal and backdrop
-            reportViewer.style.display = 'flex'; // Changed to flex for the column layout
-            backdrop.style.display = 'block';
-            
-            try {
-                const response = await fetch(`/api/report/${encodeURIComponent(filename)}`);
-                const data = await response.json();
-                
-                // Convert markdown to HTML (basic)
-                let html = data.content
-                    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-                    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-                    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    .replace(/`(.*?)`/g, '<code>$1</code>')
-                    .replace(/^- (.*$)/gm, '<li>$1</li>')
-                    .replace(/^---$/gm, '<hr>')
-                    .replace(/\n\n/g, '</p><p>')
-                    .replace(/\n/g, '<br>');
-                
-                html = '<p>' + html + '</p>';
-                html = html.replace(/<p><h/g, '<h').replace(/<\/h([1-3])><\/p>/g, '</h$1>');
-                html = html.replace(/<p><li>/g, '<ul><li>').replace(/<\/li><\/p>/g, '</li></ul>');
-                html = html.replace(/<p><hr><\/p>/g, '<hr>');
-                
-                reportContent.innerHTML = html;
-                
-                // Render LaTeX if available
-                setTimeout(renderMathInReport, 100);
-            } catch (error) {
-                reportContent.innerHTML = '<div style="color: var(--error);">❌ Rapor yüklenemedi: ' + error.message + '</div>';
-            }
+      async function viewReport(filename) {
+        const reportViewer = document.getElementById("reportViewer");
+        const reportTitle = document.getElementById("reportTitle");
+        const reportContent = document.getElementById("reportContent");
+        const backdrop = document.getElementById("backdrop");
+
+        currentReportFilename = filename;
+        reportTitle.textContent = "📄 " + filename;
+        reportContent.innerHTML =
+          '<div style="text-align: center; padding: 40px;"><div class="spinner"></div> Rapor yükleniyor...</div>';
+
+        // Show modal and backdrop
+        reportViewer.style.display = "flex"; // Changed to flex for the column layout
+        backdrop.style.display = "block";
+
+        try {
+          const response = await fetch(
+            `/api/report/${encodeURIComponent(filename)}`,
+          );
+          const data = await response.json();
+
+          // Convert markdown to HTML (basic)
+          let html = data.content
+            .replace(/^### (.*$)/gm, "<h3>$1</h3>")
+            .replace(/^## (.*$)/gm, "<h2>$1</h2>")
+            .replace(/^# (.*$)/gm, "<h1>$1</h1>")
+            .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+            .replace(/\*(.*?)\*/g, "<em>$1</em>")
+            .replace(/`(.*?)`/g, "<code>$1</code>")
+            .replace(/^- (.*$)/gm, "<li>$1</li>")
+            .replace(/^---$/gm, "<hr>")
+            .replace(/\n\n/g, "</p><p>")
+            .replace(/\n/g, "<br>");
+
+          html = "<p>" + html + "</p>";
+          html = html
+            .replace(/<p><h/g, "<h")
+            .replace(/<\/h([1-3])><\/p>/g, "</h$1>");
+          html = html
+            .replace(/<p><li>/g, "<ul><li>")
+            .replace(/<\/li><\/p>/g, "</li></ul>");
+          html = html.replace(/<p><hr><\/p>/g, "<hr>");
+
+          reportContent.innerHTML = html;
+
+          // Render LaTeX if available
+          setTimeout(renderMathInReport, 100);
+        } catch (error) {
+          reportContent.innerHTML =
+            '<div style="color: var(--error);">❌ Rapor yüklenemedi: ' +
+            error.message +
+            "</div>";
         }
+      }
 
-        function renderMathInReport() {
-            const reportContent = document.getElementById('reportContent');
-            if (typeof renderMathInElement !== 'undefined') {
-                renderMathInElement(reportContent, {
-                    delimiters: [
-                        {left: '$$', right: '$$', display: true},
-                        {left: '$', right: '$', display: false},
-                        {left: '\\[', right: '\\]', display: true},
-                        {left: '\\(', right: '\\)', display: false}
-                    ],
-                    throwOnError: false,
-                    output: 'html'
-                });
-            }
+      function renderMathInReport() {
+        const reportContent = document.getElementById("reportContent");
+        if (typeof renderMathInElement !== "undefined") {
+          renderMathInElement(reportContent, {
+            delimiters: [
+              { left: "$$", right: "$$", display: true },
+              { left: "$", right: "$", display: false },
+              { left: "\\[", right: "\\]", display: true },
+              { left: "\\(", right: "\\)", display: false },
+            ],
+            throwOnError: false,
+            output: "html",
+          });
         }
+      }
 
-        function downloadReport() {
-            if (currentReportFilename) {
-                window.open(`/api/report/${encodeURIComponent(currentReportFilename)}/raw`, '_blank');
-            }
+      function downloadReport() {
+        if (currentReportFilename) {
+          window.open(
+            `/api/report/${encodeURIComponent(currentReportFilename)}/raw`,
+            "_blank",
+          );
         }
+      }
 
-        function closeReport() {
-            document.getElementById('reportViewer').style.display = 'none';
-            document.getElementById('backdrop').style.display = 'none';
-            currentReportFilename = null;
+      async function downloadPDF() {
+        if (!currentReportFilename) return;
+        
+        const reportContent = document.getElementById('reportContent');
+        
+        // Open a new window with print-friendly content
+        const printWindow = window.open('', '_blank');
+        
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>${currentReportFilename.replace('.md', '')} - PDF</title>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.8;
+                padding: 40px;
+                color: #1a1a2e;
+                background: white;
+                max-width: 800px;
+                margin: 0 auto;
+              }
+              h1 { color: #6366f1; border-bottom: 3px solid #6366f1; padding-bottom: 12px; margin-bottom: 24px; font-size: 24px; }
+              h2 { color: #4f46e5; margin-top: 28px; margin-bottom: 12px; font-size: 20px; border-left: 4px solid #6366f1; padding-left: 12px; }
+              h3 { color: #4338ca; margin-top: 20px; margin-bottom: 8px; font-size: 16px; }
+              p { margin-bottom: 12px; }
+              strong { color: #6366f1; }
+              code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; }
+              pre { background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 16px 0; }
+              pre code { background: transparent; color: inherit; }
+              ul, ol { margin-left: 24px; margin-bottom: 12px; }
+              li { margin-bottom: 6px; }
+              hr { border: none; border-top: 2px solid #e5e7eb; margin: 24px 0; }
+              .katex { font-size: 1.1em; }
+              .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 11px; }
+              @media print {
+                body { padding: 20px; }
+                @page { margin: 1.5cm; }
+              }
+            </style>
+          </head>
+          <body>
+            <h1>📄 ${currentReportFilename.replace('.md', '')}</h1>
+            ${reportContent.innerHTML}
+            <div class="footer">Gemini Question Solver ile oluşturuldu</div>
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  window.print();
+                }, 500);
+              };
+            <\/script>
+          </body>
+          </html>
+        `);
+        
+        printWindow.document.close();
+      }
+
+      function closeReport() {
+        document.getElementById("reportViewer").style.display = "none";
+        document.getElementById("backdrop").style.display = "none";
+        currentReportFilename = null;
+      }
+
+      // ==================== History Functions ====================
+
+      async function loadTopics() {
+        try {
+          const response = await fetch("/api/topics");
+          const topics = await response.json();
+
+          const filterTopic = document.getElementById("filterTopic");
+          filterTopic.innerHTML = '<option value="">Tüm Konular</option>';
+
+          topics.forEach((topic) => {
+            const option = document.createElement("option");
+            option.value = topic.name;
+            option.textContent = `${topic.icon} ${topic.name}`;
+            filterTopic.appendChild(option);
+          });
+        } catch (error) {
+          console.error("Error loading topics:", error);
         }
+      }
 
-        // ==================== History Functions ====================
+      async function loadHistory() {
+        const historyList = document.getElementById("historyList");
+        const emptyHistory = document.getElementById("emptyHistory");
+        const filterStatus = document.getElementById("filterStatus").value;
+        const filterTopic = document.getElementById("filterTopic").value;
 
-        async function loadTopics() {
-            try {
-                const response = await fetch('/api/topics');
-                const topics = await response.json();
-                
-                const filterTopic = document.getElementById('filterTopic');
-                filterTopic.innerHTML = '<option value="">Tüm Konular</option>';
-                
-                topics.forEach(topic => {
-                    const option = document.createElement('option');
-                    option.value = topic.name;
-                    option.textContent = `${topic.icon} ${topic.name}`;
-                    filterTopic.appendChild(option);
-                });
-            } catch (error) {
-                console.error('Error loading topics:', error);
-            }
-        }
+        historyList.innerHTML =
+          '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Sorular yükleniyor...</div>';
+        emptyHistory.style.display = "none";
 
-        async function loadHistory() {
-            const historyList = document.getElementById('historyList');
-            const emptyHistory = document.getElementById('emptyHistory');
-            const filterStatus = document.getElementById('filterStatus').value;
-            const filterTopic = document.getElementById('filterTopic').value;
-            
-            historyList.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="spinner"></div> Sorular yükleniyor...</div>';
-            emptyHistory.style.display = 'none';
-            
-            try {
-                // Load stats
-                const statsRes = await fetch('/api/stats');
-                const stats = await statsRes.json();
-                
-                document.getElementById('statTotal').textContent = stats.total;
-                document.getElementById('statSuccess').textContent = stats.success;
-                document.getElementById('statFailed').textContent = stats.failed;
-                document.getElementById('statRate').textContent = stats.success_rate + '%';
-                
-                // Show/hide retry button based on failed count
-                const retryBtn = document.getElementById('retryAllBtn');
-                if (retryBtn) {
-                     retryBtn.style.display = stats.failed > 0 ? 'inline-block' : 'none';
-                }
-                
-                // Load questions
-                let url = '/api/questions?archived=false';
-                if (filterStatus) url += `&status=${filterStatus}`;
-                if (filterTopic) url += `&topic=${encodeURIComponent(filterTopic)}`;
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.questions.length === 0) {
-                    historyList.innerHTML = '';
-                    emptyHistory.style.display = 'block';
-                } else {
-                    emptyHistory.style.display = 'none';
-                    historyList.innerHTML = data.questions.map(q => {
-                        const date = new Date(q.created_at);
-                        const dateStr = date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                        const statusIcon = q.status === 'success' ? '✅' : '❌';
-                        const statusClass = q.status === 'success' ? 'success' : 'failed';
-                        const timeStr = q.time_taken ? `${q.time_taken.toFixed(1)}s` : '-';
-                        
-                        return `
+        try {
+          // Load stats
+          const statsRes = await fetch("/api/stats");
+          const stats = await statsRes.json();
+
+          document.getElementById("statTotal").textContent = stats.total;
+          document.getElementById("statSuccess").textContent = stats.success;
+          document.getElementById("statFailed").textContent = stats.failed;
+          document.getElementById("statRate").textContent =
+            stats.success_rate + "%";
+
+          // Show/hide retry button based on failed count
+          const retryBtn = document.getElementById("retryAllBtn");
+          if (retryBtn) {
+            retryBtn.style.display = stats.failed > 0 ? "inline-block" : "none";
+          }
+
+          // Load questions
+          let url = "/api/questions?archived=false";
+          if (filterStatus) url += `&status=${filterStatus}`;
+          if (filterTopic) url += `&topic=${encodeURIComponent(filterTopic)}`;
+
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (data.questions.length === 0) {
+            historyList.innerHTML = "";
+            emptyHistory.style.display = "block";
+          } else {
+            emptyHistory.style.display = "none";
+            historyList.innerHTML = data.questions
+              .map((q) => {
+                const date = new Date(q.created_at);
+                const dateStr =
+                  date.toLocaleDateString("tr-TR") +
+                  " " +
+                  date.toLocaleTimeString("tr-TR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                const statusIcon = q.status === "success" ? "✅" : "❌";
+                const statusClass =
+                  q.status === "success" ? "success" : "failed";
+                const timeStr = q.time_taken
+                  ? `${q.time_taken.toFixed(1)}s`
+                  : "-";
+
+                return `
                             <div class="history-item ${statusClass}" id="question-${q.id}">
                                 <div class="history-item-info">
                                     <span class="history-item-icon">${statusIcon}</span>
                                     <div class="history-item-details">
                                         <div class="history-item-name">${q.filename}</div>
                                         <div class="history-item-meta">
-                                            <span class="topic">${q.topic || 'Genel'}</span>
+                                            <span class="topic">${q.topic || "Genel"}</span>
                                             <span>⏱️ ${timeStr}</span>
                                             <span>📅 ${dateStr}</span>
-                                            ${q.retry_count > 0 ? `<span>🔄 ${q.retry_count}x tekrar</span>` : ''}
+                                            ${q.retry_count > 0 ? `<span>🔄 ${q.retry_count}x tekrar</span>` : ""}
                                         </div>
                                     </div>
                                 </div>
                                 <div class="history-item-actions">
-                                    ${q.status === 'failed' ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ''}
+                                    ${q.status === "failed" ? `<button class="btn btn-primary" onclick="retryQuestion(${q.id})">🔄 Tekrar</button>` : ""}
                                     <button class="btn btn-secondary" onclick="viewQuestion(${q.id})">👁️ Görüntüle</button>
                                     <button class="btn btn-secondary" style="border-color: var(--error); color: var(--error);" onclick="deleteQuestion(${q.id})">🗑️ Sil</button>
                                 </div>
                             </div>
                         `;
-                    }).join('');
-                }
-            } catch (error) {
-                historyList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Sorular yüklenemedi</div>';
-            }
+              })
+              .join("");
+          }
+        } catch (error) {
+          historyList.innerHTML =
+            '<div style="text-align: center; padding: 20px; color: var(--error);">❌ Sorular yüklenemedi</div>';
         }
+      }
 
-        async function retryQuestion(questionId) {
-            const btn = event.target;
-            btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div>';
-            
-            try {
-                const response = await fetch(`/api/questions/${questionId}/retry`, { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    alert('✅ Soru başarıyla çözüldü!');
-                } else {
-                    alert('❌ Soru tekrar başarısız oldu: ' + (data.result?.error || 'Bilinmeyen hata'));
-                }
-                
+      async function retryQuestion(questionId) {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div>';
+
+        try {
+          const response = await fetch(`/api/questions/${questionId}/retry`, {
+            method: "POST",
+          });
+          const data = await response.json();
+
+          if (data.success) {
+            alert("✅ Soru başarıyla çözüldü!");
+          } else {
+            alert(
+              "❌ Soru tekrar başarısız oldu: " +
+                (data.result?.error || "Bilinmeyen hata"),
+            );
+          }
+
+          loadHistory();
+        } catch (error) {
+          alert("❌ Hata: " + error.message);
+          btn.disabled = false;
+          btn.innerHTML = "🔄 Tekrar";
+        }
+      }
+
+      async function retryAllFailed() {
+        if (
+          !confirm(
+            "Tüm başarısız soruları tekrar çözmek istediğinize emin misiniz?",
+          )
+        )
+          return;
+
+        const btn = document.getElementById("retryAllBtn");
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div> Çözülüyor...';
+
+        try {
+          const response = await fetch("/api/questions/retry-all-failed", {
+            method: "POST",
+          });
+          const data = await response.json();
+
+          if (data.session_id) {
+            sessionId = data.session_id;
+            alert(`🔄 ${data.count} soru tekrar çözülüyor...`);
+
+            // Poll for progress
+            const pollRetry = setInterval(async () => {
+              const progressRes = await fetch(`/api/progress/${sessionId}`);
+              const progress = await progressRes.json();
+
+              if (progress.status === "completed") {
+                clearInterval(pollRetry);
+                alert("✅ Tüm sorular işlendi!");
                 loadHistory();
-            } catch (error) {
-                alert('❌ Hata: ' + error.message);
                 btn.disabled = false;
-                btn.innerHTML = '🔄 Tekrar';
-            }
-        }
-
-        async function retryAllFailed() {
-            if (!confirm('Tüm başarısız soruları tekrar çözmek istediğinize emin misiniz?')) return;
-            
-            const btn = document.getElementById('retryAllBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div> Çözülüyor...';
-            
-            try {
-                const response = await fetch('/api/questions/retry-all-failed', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.session_id) {
-                    sessionId = data.session_id;
-                    alert(`🔄 ${data.count} soru tekrar çözülüyor...`);
-                    
-                    // Poll for progress
-                    const pollRetry = setInterval(async () => {
-                        const progressRes = await fetch(`/api/progress/${sessionId}`);
-                        const progress = await progressRes.json();
-                        
-                        if (progress.status === 'completed') {
-                            clearInterval(pollRetry);
-                            alert('✅ Tüm sorular işlendi!');
-                            loadHistory();
-                            btn.disabled = false;
-                            btn.innerHTML = '🔄 Tümünü Tekrar Dene';
-                        } else if (progress.status === 'error') {
-                            clearInterval(pollRetry);
-                            alert('❌ Hata: ' + progress.error);
-                            btn.disabled = false;
-                            btn.innerHTML = '🔄 Tümünü Tekrar Dene';
-                        }
-                    }, 2000);
-                }
-            } catch (error) {
-                alert('❌ Hata: ' + error.message);
+                btn.innerHTML = "🔄 Tümünü Tekrar Dene";
+              } else if (progress.status === "error") {
+                clearInterval(pollRetry);
+                alert("❌ Hata: " + progress.error);
                 btn.disabled = false;
-                btn.innerHTML = '🔄 Tümünü Tekrar Dene';
-            }
+                btn.innerHTML = "🔄 Tümünü Tekrar Dene";
+              }
+            }, 2000);
+          }
+        } catch (error) {
+          alert("❌ Hata: " + error.message);
+          btn.disabled = false;
+          btn.innerHTML = "🔄 Tümünü Tekrar Dene";
         }
+      }
 
-        async function archiveSuccessful() {
-            if (!confirm('Tüm başarılı soruları arşivlemek istediğinize emin misiniz?')) return;
-            
-            try {
-                const response = await fetch('/api/questions/archive?archive_successful=true', { method: 'POST' });
-                const data = await response.json();
-                
-                alert(`📦 ${data.count} soru arşivlendi!`);
-                loadHistory();
-            } catch (error) {
-                alert('❌ Hata: ' + error.message);
-            }
+      async function archiveSuccessful() {
+        if (
+          !confirm(
+            "Tüm başarılı soruları arşivlemek istediğinize emin misiniz?",
+          )
+        )
+          return;
+
+        try {
+          const response = await fetch(
+            "/api/questions/archive?archive_successful=true",
+            { method: "POST" },
+          );
+          const data = await response.json();
+
+          alert(`📦 ${data.count} soru arşivlendi!`);
+          loadHistory();
+        } catch (error) {
+          alert("❌ Hata: " + error.message);
         }
+      }
 
-        async function deleteQuestion(questionId) {
-            if (!confirm('Bu soruyu silmek istediğinize emin misiniz?')) return;
-            
-            try {
-                const response = await fetch(`/api/questions/${questionId}`, { method: 'DELETE' });
-                if (response.ok) {
-                    const el = document.getElementById(`question-${questionId}`);
-                    if (el) el.remove();
-                    loadHistory();
-                } else {
-                    alert('❌ Silinemedi');
-                }
-            } catch (error) {
-                alert('❌ Hata: ' + error.message);
-            }
+      async function deleteQuestion(questionId) {
+        if (!confirm("Bu soruyu silmek istediğinize emin misiniz?")) return;
+
+        try {
+          const response = await fetch(`/api/questions/${questionId}`, {
+            method: "DELETE",
+          });
+          if (response.ok) {
+            const el = document.getElementById(`question-${questionId}`);
+            if (el) el.remove();
+            loadHistory();
+          } else {
+            alert("❌ Silinemedi");
+          }
+        } catch (error) {
+          alert("❌ Hata: " + error.message);
         }
+      }
 
-        async function deleteAllQuestions() {
-            if (!confirm('TÜM SORULARI silmek istediğinize emin misiniz? Bu işlem geri alınamaz!')) return;
-            
-            try {
-                const response = await fetch('/api/questions?all_questions=true', { method: 'DELETE' });
-                const data = await response.json();
-                
-                alert(`🗑️ ${data.count} soru silindi!`);
-                loadHistory();
-            } catch (error) {
-                alert('❌ Hata: ' + error.message);
-            }
+      async function deleteAllQuestions() {
+        if (
+          !confirm(
+            "TÜM SORULARI silmek istediğinize emin misiniz? Bu işlem geri alınamaz!",
+          )
+        )
+          return;
+
+        try {
+          const response = await fetch("/api/questions?all_questions=true", {
+            method: "DELETE",
+          });
+          const data = await response.json();
+
+          alert(`🗑️ ${data.count} soru silindi!`);
+          loadHistory();
+        } catch (error) {
+          alert("❌ Hata: " + error.message);
         }
+      }
 
-        async function viewQuestion(questionId) {
-            try {
-                const response = await fetch(`/api/questions/${questionId}`);
-                const q = await response.json();
-                
-                const viewer = document.getElementById('reportViewer');
-                const backdrop = document.getElementById('backdrop');
-                const title = document.getElementById('reportTitle');
-                const content = document.getElementById('reportContent');
-                
-                title.textContent = `📷 ${q.filename}`;
-                
-                let html = `
+      async function viewQuestion(questionId) {
+        try {
+          const response = await fetch(`/api/questions/${questionId}`);
+          const q = await response.json();
+
+          const viewer = document.getElementById("reportViewer");
+          const backdrop = document.getElementById("backdrop");
+          const title = document.getElementById("reportTitle");
+          const content = document.getElementById("reportContent");
+
+          title.textContent = `📷 ${q.filename}`;
+
+          let html = `
                     <div style="margin-bottom: 24px; background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px;">
                         <img src="/api/image/${encodeURIComponent(q.filename)}" style="max-height: 200px; display: block; margin: 0 auto 16px; border-radius: 8px;">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <div><strong>Konu:</strong> ${q.topic || 'Genel'}</div>
-                            <div><strong>Durum:</strong> ${q.status === 'success' ? '✅ Başarılı' : '❌ Başarısız'}</div>
-                            <div><strong>Süre:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + 's' : '-'}</div>
-                            <div><strong>Tarih:</strong> ${new Date(q.created_at).toLocaleString('tr-TR')}</div>
+                            <div><strong>Konu:</strong> ${q.topic || "Genel"}</div>
+                            <div><strong>Durum:</strong> ${q.status === "success" ? "✅ Başarılı" : "❌ Başarısız"}</div>
+                            <div><strong>Süre:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + "s" : "-"}</div>
+                            <div><strong>Tarih:</strong> ${new Date(q.created_at).toLocaleString("tr-TR")}</div>
                         </div>
                     </div>
                 `;
-                
-                if (q.solution) {
-                    html += `<div class="solution">${formatSolution(q.solution)}</div>`;
-                } else if (q.error) {
-                    html += `<div style="color: var(--error); padding: 16px; border: 1px solid var(--error); border-radius: 8px; background: rgba(239, 68, 68, 0.1);">❌ Hata: ${q.error}</div>`;
-                }
-                
-                content.innerHTML = html;
-                
-                // Show modal and backdrop
-                viewer.style.display = 'flex';
-                backdrop.style.display = 'block';
-                
-                // Render math
-                setTimeout(() => {
-                    renderMathInReport();
-                }, 100);
-                
-            } catch (error) {
-                console.error(error);
-                alert('❌ Soru yüklenemedi: ' + error.message);
-            }
-        }
 
-        function formatSolution(text) {
-            if (!text) return '';
-            return text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\n/g, '<br>');
-        }
+          if (q.solution) {
+            html += `<div class="solution">${formatSolution(q.solution)}</div>`;
+          } else if (q.error) {
+            html += `<div style="color: var(--error); padding: 16px; border: 1px solid var(--error); border-radius: 8px; background: rgba(239, 68, 68, 0.1);">❌ Hata: ${q.error}</div>`;
+          }
 
-        // Initialize
-        checkStatus();
-        scanFolder();
+          content.innerHTML = html;
+
+          // Show modal and backdrop
+          viewer.style.display = "flex";
+          backdrop.style.display = "block";
+
+          // Render math
+          setTimeout(() => {
+            renderMathInReport();
+          }, 100);
+        } catch (error) {
+          console.error(error);
+          alert("❌ Soru yüklenemedi: " + error.message);
+        }
+      }
+
+      function formatSolution(text) {
+        if (!text) return "";
+        return text
+          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+          .replace(/\n/g, "<br>");
+      }
+
+      // Initialize
+      checkStatus();
+      scanFolder();
     </script>
-</body>
+  </body>
 </html>
-
