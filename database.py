@@ -53,6 +53,12 @@ def init_database():
             total INTEGER DEFAULT 0,
             success INTEGER DEFAULT 0,
             failed INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'processing',
+            progress INTEGER DEFAULT 0,
+            files_json TEXT,
+            results_json TEXT,
+            error TEXT,
+            report_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP
         )
@@ -65,6 +71,18 @@ def init_database():
             name TEXT UNIQUE NOT NULL,
             icon TEXT,
             color TEXT
+        )
+    """)
+
+    # Topic summaries table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS topic_summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            based_on INTEGER DEFAULT 0,
+            time_taken REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
@@ -86,6 +104,36 @@ def init_database():
             "INSERT OR IGNORE INTO topics (name, icon, color) VALUES (?, ?, ?)",
             (name, icon, color)
         )
+    
+    conn.commit()
+    conn.close()
+
+    # Migrate: add new columns if missing (safe for existing DBs)
+    _migrate_sessions_table()
+
+
+def _migrate_sessions_table():
+    """Add new columns to sessions table if they don't exist"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(sessions)")
+    existing_cols = {row['name'] for row in cursor.fetchall()}
+    
+    new_cols = {
+        'status': "TEXT DEFAULT 'processing'",
+        'progress': "INTEGER DEFAULT 0",
+        'files_json': "TEXT",
+        'results_json': "TEXT",
+        'error': "TEXT",
+        'report_path': "TEXT",
+    }
+    
+    for col_name, col_def in new_cols.items():
+        if col_name not in existing_cols:
+            try:
+                cursor.execute(f"ALTER TABLE sessions ADD COLUMN {col_name} {col_def}")
+            except Exception:
+                pass
     
     conn.commit()
     conn.close()
@@ -271,13 +319,13 @@ def delete_questions(question_ids: List[int] = None, status: str = None, all_que
 
 # ==================== Sessions ====================
 
-def create_session(session_id: str, source: str = "web", total: int = 0) -> str:
+def create_session(session_id: str, source: str = "web", total: int = 0, files: list = None) -> str:
     """Create a new session"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO sessions (id, source, total) VALUES (?, ?, ?)",
-        (session_id, source, total)
+        "INSERT INTO sessions (id, source, total, status, progress, files_json) VALUES (?, ?, ?, 'processing', 0, ?)",
+        (session_id, source, total, json.dumps(files) if files else None)
     )
     conn.commit()
     conn.close()
@@ -371,6 +419,121 @@ def get_topics() -> List[Dict]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def save_session_state(session_id: str, session_data: dict):
+    """Persist full session state to SQLite"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Serialize complex fields
+    files_json = json.dumps(session_data.get("files", []))
+    results_json = json.dumps(session_data.get("results", []))
+    
+    cursor.execute("""
+        UPDATE sessions SET 
+            status = ?, progress = ?, files_json = ?, results_json = ?,
+            error = ?, report_path = ?
+        WHERE id = ?
+    """, (
+        session_data.get("status", "processing"),
+        session_data.get("progress", 0),
+        files_json,
+        results_json,
+        session_data.get("error"),
+        session_data.get("report_path"),
+        session_id
+    ))
+    
+    conn.commit()
+    conn.close()
+
+
+def get_active_sessions() -> List[Dict]:
+    """Get all non-completed sessions for restore on restart"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM sessions 
+        WHERE status IN ('processing', 'uploaded') 
+        ORDER BY created_at DESC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    sessions = []
+    for row in rows:
+        d = dict(row)
+        d['files'] = json.loads(d.get('files_json') or '[]')
+        d['results'] = json.loads(d.get('results_json') or '[]')
+        sessions.append(d)
+    return sessions
+
+
+def get_recent_sessions(limit: int = 20) -> List[Dict]:
+    """Get recent sessions for history"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM sessions 
+        ORDER BY created_at DESC LIMIT ?
+    """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+# ==================== Topic Summaries ====================
+
+def save_summary(topic: str, summary: str, based_on: int = 0, time_taken: float = None) -> int:
+    """Save a topic summary"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO topic_summaries (topic, summary, based_on, time_taken)
+        VALUES (?, ?, ?, ?)
+    """, (topic, summary, based_on, time_taken))
+    summary_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return summary_id
+
+
+def get_summaries(topic: str = None) -> List[Dict]:
+    """Get all summaries, optionally filtered by topic"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if topic:
+        cursor.execute(
+            "SELECT * FROM topic_summaries WHERE topic = ? ORDER BY created_at DESC",
+            (topic,)
+        )
+    else:
+        cursor.execute("SELECT * FROM topic_summaries ORDER BY topic, created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_summary(summary_id: int) -> Optional[Dict]:
+    """Get a single summary by ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM topic_summaries WHERE id = ?", (summary_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_summary(summary_id: int) -> bool:
+    """Delete a summary by ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM topic_summaries WHERE id = ?", (summary_id,))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count > 0
 
 
 # Initialize database on import
