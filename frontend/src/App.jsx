@@ -15,12 +15,12 @@ import { useProgress } from './hooks/useProgress';
 import toast from 'react-hot-toast';
 
 const TABS = [
-  { id: 'folder', label: 'Klasor Tarama', short: 'Klasor', emoji: '\uD83D\uDCC1' },
-  { id: 'upload', label: 'Dosya Yukleme', short: 'Yukle', emoji: '\uD83D\uDCE4' },
+  { id: 'folder', label: 'Klasor Tarama', short: 'Tarama', emoji: '\uD83D\uDCC1' },
+  { id: 'upload', label: 'Dosya Yukleme', short: 'Yukleme', emoji: '\uD83D\uDCE4' },
   { id: 'reports', label: 'Raporlar', short: 'Rapor', emoji: '\uD83D\uDCC4' },
   { id: 'history', label: 'Gecmis', short: 'Gecmis', emoji: '\uD83D\uDCDA' },
-  { id: 'topics', label: 'Konu Ozeti', short: 'Ozet', emoji: '\uD83D\uDCDD' },
-  { id: 'ratelimit', label: 'API Kullanim', short: 'API', emoji: '\uD83D\uDCCA' },
+  { id: 'topics', label: 'Konu Ozeti', short: 'Ozetler', emoji: '\uD83D\uDCDD' },
+  { id: 'ratelimit', label: 'API Kullanim', short: 'Kullanim', emoji: '\uD83D\uDCCA' },
 ];
 
 export default function App() {
@@ -115,7 +115,7 @@ export default function App() {
             <div className="brand-icon">{'\uD83E\uDDE0'}</div>
             <div>
               <div className="brand-title">Gemini Solver</div>
-              <div className="brand-subtitle">Akademik Cozum Studyo</div>
+              <div className="brand-subtitle">Akademik Cozum Platformu</div>
             </div>
           </div>
 
@@ -145,8 +145,8 @@ export default function App() {
             <div className="hero-grid">
               <div>
                 <div className="hero-eyebrow">Gemini Question Solver</div>
-                <h1>Akademik soru cozum akisi</h1>
-                <p>Soru fotograflarini yukle veya klasorden tara, paralel olarak coz ve duzenli raporlar al.</p>
+                <h1>Akademik soru cozum paneli</h1>
+                <p>Gorselleri yukle veya klasorden tara; paralel cozum ve duzenli rapor akisini tek ekranda yonet.</p>
               </div>
               <div className="hero-metrics">
                 <div className="hero-metric-card">
