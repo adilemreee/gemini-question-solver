@@ -78,7 +78,12 @@ export default function LiveTimelinePanel({
                         </figure>
                       )}
                       <div>
-                        <div className="timeline-title">{item.success ? 'Cozuldu' : item.success === false ? 'Basarisiz' : 'Islendi'}</div>
+                        <div className="timeline-title-row">
+                          <div className="timeline-title">{item.success ? 'Cozuldu' : item.success === false ? 'Basarisiz' : 'Islendi'}</div>
+                          <span className={`timeline-state ${item.success ? 'success' : item.success === false ? 'error' : 'processing'}`}>
+                            {item.success ? 'OK' : item.success === false ? 'Hata' : 'Suruyor'}
+                          </span>
+                        </div>
                         <div className="timeline-meta">
                           {item.topic && <span className="topic-badge">{item.topic}</span>}
                           {item.time_taken && <span>{item.time_taken.toFixed(1)}s</span>}

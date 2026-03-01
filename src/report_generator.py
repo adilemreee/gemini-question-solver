@@ -2,9 +2,11 @@
 Report Generator Module
 Creates unified markdown reports from question solutions
 """
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote
 
 from rich.console import Console
 
@@ -57,11 +59,12 @@ class ReportGenerator:
         output_path = self.output_dir / output_filename
         
         # Build report content
+        source_label = Path(questions_dir).name if questions_dir else "source"
         report_lines = [
             "# 📝 Soru Çözüm Raporu",
             "",
             f"**Oluşturulma Tarihi**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"**Kaynak Klasör**: `{questions_dir}`",
+            f"**Kaynak Klasör**: `{source_label}`",
             "",
             "---",
             "",
@@ -91,11 +94,22 @@ class ReportGenerator:
                 "",
             ])
             
-            # Add relative image reference
-            image_path = questions_dir / filename
-            if image_path.exists():
+            image_url = result.get("image_url")
+            if not image_url:
+                # CLI fallback: embed a relative filesystem path (not absolute)
+                image_path = Path(questions_dir) / filename
+                if image_path.exists():
+                    rel_path = os.path.relpath(image_path, self.output_dir)
+                    image_url = Path(rel_path).as_posix()
+                else:
+                    topic = result.get("topic")
+                    image_url = f"/api/image/{quote(filename)}"
+                    if topic and topic != "Genel":
+                        image_url += f"?topic={quote(str(topic))}"
+
+            if image_url:
                 report_lines.extend([
-                    f"![{filename}]({image_path})",
+                    f"![{filename}]({image_url})",
                     "",
                 ])
             

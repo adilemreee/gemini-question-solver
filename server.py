@@ -5,10 +5,12 @@ FastAPI-based web interface with real-time progress updates
 import asyncio
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote as urlquote
 from pydantic import BaseModel
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Query, Body, WebSocket, WebSocketDisconnect
@@ -41,6 +43,100 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Store active sessions
 active_sessions = {}
+
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+CONTENT_TYPES_BY_SUFFIX = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+UPLOAD_EXT_BY_MIME = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+def _is_within_base(path: Path, base: Path) -> bool:
+    try:
+        path.resolve().relative_to(base.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _safe_basename(raw_name: str, field: str = "filename") -> str:
+    raw_name = (raw_name or "").strip()
+    basename = Path(raw_name).name
+    if not raw_name or basename != raw_name or basename in {"", ".", ".."}:
+        raise HTTPException(status_code=400, detail=f"Invalid {field}")
+    return basename
+
+
+def _safe_topic_segment(topic: str) -> str:
+    safe_topic = (topic or "").strip()
+    if not safe_topic or safe_topic in {".", ".."} or "/" in safe_topic or "\\" in safe_topic:
+        raise HTTPException(status_code=400, detail="Invalid topic")
+    return safe_topic
+
+
+def _normalize_topic_name(topic: str) -> str:
+    cleaned = (topic or "").strip().replace("\x00", "")
+    if not cleaned:
+        return "Genel"
+    cleaned = cleaned.replace("/", " ").replace("\\", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"[^\w .()\-]", "_", cleaned, flags=re.UNICODE).strip(" .")
+    if not cleaned or cleaned in {".", ".."}:
+        return "Genel"
+    return cleaned[:80]
+
+
+def _resolve_output_report_file(filename: str) -> Path:
+    safe_name = _safe_basename(filename, "report filename")
+    if Path(safe_name).suffix.lower() != ".md":
+        raise HTTPException(status_code=400, detail="Invalid report filename")
+    report_path = (OUTPUT_DIR / safe_name).resolve()
+    if not _is_within_base(report_path, OUTPUT_DIR):
+        raise HTTPException(status_code=400, detail="Invalid report filename")
+    if not report_path.exists() or not report_path.is_file():
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report_path
+
+
+def _sanitize_upload_filename(raw_name: str, content_type: str) -> str:
+    base = Path(raw_name or "").name.strip()
+    if not base:
+        base = f"upload_{uuid.uuid4().hex[:10]}"
+    safe = re.sub(r"[^\w.\-]", "_", base, flags=re.UNICODE)
+    safe = re.sub(r"_+", "_", safe).strip("._")
+    if not safe:
+        safe = f"upload_{uuid.uuid4().hex[:10]}"
+
+    suffix = Path(safe).suffix.lower()
+    if suffix not in SUPPORTED_IMAGE_SUFFIXES:
+        safe += UPLOAD_EXT_BY_MIME.get(content_type, ".jpg")
+    return safe
+
+
+def _unique_file_path(parent: Path, filename: str) -> Path:
+    candidate = parent / filename
+    stem = candidate.stem
+    suffix = candidate.suffix
+    index = 1
+    while candidate.exists():
+        candidate = parent / f"{stem}_{index}{suffix}"
+        index += 1
+    return candidate
+
+
+def _safe_session_id(session_id: str) -> str:
+    if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", session_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    return session_id
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -127,7 +223,8 @@ def move_to_topic_folder(image_path: str, topic: str) -> str:
         return image_path
     
     # Create topic folder
-    topic_folder = QUESTIONS_DIR / topic
+    safe_topic = _normalize_topic_name(topic)
+    topic_folder = QUESTIONS_DIR / safe_topic
     topic_folder.mkdir(parents=True, exist_ok=True)
     
     # Generate unique filename if exists
@@ -146,6 +243,26 @@ def move_to_topic_folder(image_path: str, topic: str) -> str:
         return str(dest)
     except Exception:
         return image_path
+
+
+def _build_image_url_for_report(session_id: str, source: str, image_path: str, topic: str) -> Optional[str]:
+    image_file = Path(image_path)
+    encoded_name = urlquote(image_file.name)
+
+    if source in {"folder", "folder_selected"}:
+        topic_query = ""
+        try:
+            rel = image_file.resolve().relative_to(QUESTIONS_DIR.resolve())
+            if len(rel.parts) > 1:
+                topic_query = f"?topic={urlquote(rel.parts[0])}"
+        except ValueError:
+            normalized_topic = _normalize_topic_name(topic)
+            if normalized_topic and normalized_topic != "Genel":
+                topic_query = f"?topic={urlquote(normalized_topic)}"
+        return f"/api/image/{encoded_name}{topic_query}"
+
+    safe_session_id = _safe_session_id(session_id)
+    return f"/api/session-image/{urlquote(safe_session_id)}/{encoded_name}"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -178,11 +295,10 @@ async def scan_folder():
     """Scan questions folder for images"""
     QUESTIONS_DIR.mkdir(exist_ok=True)
     
-    supported_formats = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     found_files = []
     
     for file_path in sorted(QUESTIONS_DIR.iterdir()):
-        if file_path.is_file() and file_path.suffix.lower() in supported_formats:
+        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES:
             found_files.append({
                 "filename": file_path.name,
                 "size": file_path.stat().st_size,
@@ -202,11 +318,10 @@ async def solve_folder():
     """Create session from questions folder and start solving"""
     QUESTIONS_DIR.mkdir(exist_ok=True)
     
-    supported_formats = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     found_files = []
     
     for file_path in sorted(QUESTIONS_DIR.iterdir()):
-        if file_path.is_file() and file_path.suffix.lower() in supported_formats:
+        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES:
             found_files.append({
                 "filename": file_path.name,
                 "size": file_path.stat().st_size,
@@ -256,12 +371,22 @@ async def solve_selected(request: SelectedFilesRequest):
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
     
-    supported_formats = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     found_files = []
+    seen_names = set()
     
-    for filename in request.filenames:
-        file_path = QUESTIONS_DIR / filename
-        if file_path.exists() and file_path.is_file() and file_path.suffix.lower() in supported_formats:
+    for raw_filename in request.filenames:
+        filename = _safe_basename(raw_filename, "filename")
+        if filename in seen_names:
+            continue
+        seen_names.add(filename)
+
+        file_path = (QUESTIONS_DIR / filename).resolve()
+        if (
+            _is_within_base(file_path, QUESTIONS_DIR)
+            and file_path.exists()
+            and file_path.is_file()
+            and file_path.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+        ):
             found_files.append({
                 "filename": file_path.name,
                 "size": file_path.stat().st_size,
@@ -296,26 +421,28 @@ async def solve_selected(request: SelectedFilesRequest):
 @app.get("/api/image/{filename}")
 async def get_image(filename: str, topic: str = None):
     """Serve image from questions folder or topic subfolders"""
+    safe_filename = _safe_basename(filename, "filename")
     file_path = None
     
     # First check if topic is specified
     if topic:
-        topic_path = QUESTIONS_DIR / topic / filename
-        if topic_path.exists():
+        safe_topic = _safe_topic_segment(topic)
+        topic_path = (QUESTIONS_DIR / safe_topic / safe_filename).resolve()
+        if _is_within_base(topic_path, QUESTIONS_DIR) and topic_path.exists() and topic_path.is_file():
             file_path = topic_path
     
     # Check root folder
     if not file_path:
-        root_path = QUESTIONS_DIR / filename
-        if root_path.exists():
+        root_path = (QUESTIONS_DIR / safe_filename).resolve()
+        if _is_within_base(root_path, QUESTIONS_DIR) and root_path.exists() and root_path.is_file():
             file_path = root_path
     
     # Search in all topic subfolders
     if not file_path:
         for subfolder in QUESTIONS_DIR.iterdir():
             if subfolder.is_dir():
-                sub_path = subfolder / filename
-                if sub_path.exists():
+                sub_path = (subfolder / safe_filename).resolve()
+                if _is_within_base(sub_path, QUESTIONS_DIR) and sub_path.exists() and sub_path.is_file():
                     file_path = sub_path
                     break
     
@@ -324,17 +451,36 @@ async def get_image(filename: str, topic: str = None):
     
     # Determine content type
     suffix = file_path.suffix.lower()
-    content_types = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-    }
-    content_type = content_types.get(suffix, "image/jpeg")
+    content_type = CONTENT_TYPES_BY_SUFFIX.get(suffix, "image/jpeg")
     
     from fastapi.responses import FileResponse
     return FileResponse(file_path, media_type=content_type)
+
+
+@app.get("/api/session-image/{session_id}/{filename}")
+async def get_session_image(session_id: str, filename: str):
+    """Serve uploaded image from a session folder safely"""
+    safe_session_id = _safe_session_id(session_id)
+    safe_filename = _safe_basename(filename, "filename")
+
+    session_dir = (UPLOAD_DIR / safe_session_id).resolve()
+    if not _is_within_base(session_dir, UPLOAD_DIR) or not session_dir.exists() or not session_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    image_path = (session_dir / safe_filename).resolve()
+    if (
+        not _is_within_base(image_path, session_dir)
+        or not image_path.exists()
+        or not image_path.is_file()
+        or image_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES
+    ):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        image_path,
+        media_type=CONTENT_TYPES_BY_SUFFIX.get(image_path.suffix.lower(), "image/jpeg"),
+    )
 
 
 @app.get("/api/topic-folders")
@@ -346,7 +492,7 @@ async def list_topic_folders():
     
     # Count files in root (unorganized)
     root_files = [f for f in QUESTIONS_DIR.iterdir() 
-                  if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+                  if f.is_file() and f.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES]
     
     if root_files:
         folders.append({
@@ -360,7 +506,7 @@ async def list_topic_folders():
     for folder in sorted(QUESTIONS_DIR.iterdir()):
         if folder.is_dir() and not folder.name.startswith('.'):
             files = [f for f in folder.iterdir() 
-                    if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+                    if f.is_file() and f.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES]
             folders.append({
                 "name": folder.name,
                 "path": str(folder),
@@ -381,13 +527,14 @@ async def get_topic_folder_files(topic: str):
     if topic == "Yeni Sorular":
         folder_path = QUESTIONS_DIR
         files = [f for f in folder_path.iterdir() 
-                if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+                if f.is_file() and f.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES]
     else:
-        folder_path = QUESTIONS_DIR / topic
-        if not folder_path.exists():
+        safe_topic = _safe_topic_segment(topic)
+        folder_path = (QUESTIONS_DIR / safe_topic).resolve()
+        if not _is_within_base(folder_path, QUESTIONS_DIR) or not folder_path.exists() or not folder_path.is_dir():
             raise HTTPException(status_code=404, detail="Topic folder not found")
         files = [f for f in folder_path.iterdir() 
-                if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']]
+                if f.is_file() and f.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES]
     
     return {
         "topic": topic,
@@ -430,13 +577,11 @@ async def list_outputs():
 @app.get("/api/report/{filename}")
 async def get_report(filename: str):
     """Get report content as markdown"""
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Report not found")
+    file_path = _resolve_output_report_file(filename)
     
     content = file_path.read_text(encoding="utf-8")
     return {
-        "filename": filename,
+        "filename": file_path.name,
         "content": content,
         "size": file_path.stat().st_size,
         "modified": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
@@ -446,31 +591,25 @@ async def get_report(filename: str):
 @app.get("/api/report/{filename}/raw")
 async def get_report_raw(filename: str):
     """Get raw report file"""
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Report not found")
+    file_path = _resolve_output_report_file(filename)
     
     from fastapi.responses import FileResponse
-    return FileResponse(file_path, media_type="text/markdown", filename=filename)
+    return FileResponse(file_path, media_type="text/markdown", filename=file_path.name)
 
 
 @app.delete("/api/report/{filename}")
 async def delete_report(filename: str):
     """Delete a report file"""
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Report not found")
+    file_path = _resolve_output_report_file(filename)
     
     file_path.unlink()
-    return {"success": True, "filename": filename}
+    return {"success": True, "filename": file_path.name}
 
 
 @app.get("/api/report/{filename}/pdf")
 async def get_report_pdf(filename: str):
     """Export report as PDF with cover page, TOC, and page numbers"""
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Report not found")
+    file_path = _resolve_output_report_file(filename)
     
     try:
         import markdown
@@ -849,7 +988,7 @@ async def get_report_pdf(filename: str):
     HTML(string=html_template).write_pdf(pdf_buffer)
     pdf_buffer.seek(0)
     
-    pdf_filename = filename.replace('.md', '.pdf')
+    pdf_filename = file_path.name.replace('.md', '.pdf')
     
     from fastapi.responses import Response
     return Response(
@@ -870,16 +1009,21 @@ async def upload_files(files: List[UploadFile] = File(...)):
     uploaded_files = []
     for file in files:
         # Validate file type
-        if not file.content_type.startswith("image/"):
+        if not file.content_type or not file.content_type.startswith("image/"):
             continue
         
-        # Save file
-        file_path = session_dir / file.filename
         content = await file.read()
+        if not content:
+            continue
+
+        safe_name = _sanitize_upload_filename(file.filename, file.content_type)
+        file_path = _unique_file_path(session_dir, safe_name).resolve()
+        if not _is_within_base(file_path, session_dir):
+            continue
         file_path.write_bytes(content)
         
         uploaded_files.append({
-            "filename": file.filename,
+            "filename": file_path.name,
             "size": len(content),
             "path": str(file_path)
         })
@@ -1014,21 +1158,28 @@ async def process_session(session_id: str):
         # Sort results by original index to maintain order
         parallel_results.sort(key=lambda r: r["_idx"])
         
+        source_type = session.get("source")
+        report_results = []
+
         # Post-process results (save to DB, move files)
         for result in parallel_results:
             image_path = result.pop("_image_path")
             result.pop("_idx")
             
-            topic = result.get("topic", "Genel")
+            topic = _normalize_topic_name(result.get("topic", "Genel"))
+            result["topic"] = topic
             new_image_path = image_path
             
             # Move successful questions to topic folder (only for folder source)
             if result["success"] and session.get("source") in ["folder", "folder_selected"]:
                 new_image_path = move_to_topic_folder(image_path, topic)
+
+            stored_filename = Path(new_image_path).name
+            result["filename"] = stored_filename
             
             # Save to database
             db.save_question(
-                filename=result["filename"],
+                filename=stored_filename,
                 image_path=new_image_path,
                 topic=topic,
                 subtopic=result.get("subtopic"),
@@ -1038,6 +1189,15 @@ async def process_session(session_id: str):
                 time_taken=result.get("time_taken"),
                 session_id=session_id
             )
+
+            result_for_report = dict(result)
+            result_for_report["image_url"] = _build_image_url_for_report(
+                session_id=session_id,
+                source=source_type,
+                image_path=new_image_path,
+                topic=topic,
+            )
+            report_results.append(result_for_report)
             
             results.append(result)
         
@@ -1053,10 +1213,10 @@ async def process_session(session_id: str):
         
         # Generate report with descriptive name
         generator = ReportGenerator()
-        session_dir = UPLOAD_DIR / session_id
+        report_source_dir = QUESTIONS_DIR if source_type in {"folder", "folder_selected"} else (UPLOAD_DIR / session_id)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         report_name = f"Cozum_{timestamp}_{len(results)}soru.md"
-        report_path = generator.generate(results, session_dir, report_name)
+        report_path = generator.generate(report_results, report_source_dir, report_name)
         
         session["status"] = "completed"
         session["report_path"] = str(report_path)

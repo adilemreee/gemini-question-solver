@@ -34,6 +34,11 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const lastTickRef = useRef(0);
 
+  const activeMode = TABS.find((t) => t.id === mode) || TABS[0];
+  const doneCount = progressData?.progress || 0;
+  const totalCount = progressData?.total || 0;
+  const completionRate = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
   useEffect(() => {
     api.getStatus().then((d) => {
       setApiReady(d.api_key_set);
@@ -137,23 +142,41 @@ export default function App() {
 
         <main className="main">
           <section className="hero">
-            <div>
-              <div className="hero-eyebrow">Gemini Question Solver</div>
-              <h1>Akademik soru cozum akisi</h1>
-              <p>Soru fotograflarini yukle veya klasorden tara, paralel olarak coz ve duzenli raporlar al.</p>
+            <div className="hero-grid">
+              <div>
+                <div className="hero-eyebrow">Gemini Question Solver</div>
+                <h1>Akademik soru cozum akisi</h1>
+                <p>Soru fotograflarini yukle veya klasorden tara, paralel olarak coz ve duzenli raporlar al.</p>
+              </div>
+              <div className="hero-metrics">
+                <div className="hero-metric-card">
+                  <span>Mod</span>
+                  <strong>{activeMode.label}</strong>
+                </div>
+                <div className="hero-metric-card">
+                  <span>Islem</span>
+                  <strong>{processing ? 'Devam ediyor' : 'Hazir'}</strong>
+                </div>
+                <div className="hero-metric-card">
+                  <span>Ilerleme</span>
+                  <strong>{totalCount > 0 ? `%${completionRate}` : '-'}</strong>
+                </div>
+              </div>
             </div>
           </section>
 
-          <div className="mode-switch">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => { setMode(tab.id); setResults(null); }}
-                className={`chip ${mode === tab.id ? 'active' : ''}`}
-              >
-                {tab.short}
-              </button>
-            ))}
+          <div className="mode-switch-wrap">
+            <div className="mode-switch">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setMode(tab.id); setResults(null); }}
+                  className={`chip ${mode === tab.id ? 'active' : ''}`}
+                >
+                  {tab.short}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="content-stack">
@@ -179,7 +202,12 @@ export default function App() {
                   )}
                   {mode === 'reports' && <ReportsMode onViewReport={openModal} />}
                   {mode === 'history' && (
-                    <HistoryMode onViewQuestion={openModal} onStartSolving={startSolving} processing={processing} />
+                    <HistoryMode
+                      onViewQuestion={openModal}
+                      onStartSolving={startSolving}
+                      processing={processing}
+                      onOpenLightbox={openLightbox}
+                    />
                   )}
                   {mode === 'topics' && <TopicSummaryMode />}
                   {mode === 'ratelimit' && <RateLimitDashboard />}

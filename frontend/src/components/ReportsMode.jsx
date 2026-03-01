@@ -79,6 +79,13 @@ export default function ReportsMode({ onViewReport }) {
     });
   };
 
+  const formatTime = (iso) =>
+    new Date(iso).toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Istanbul',
+    });
+
   return (
     <div>
       <div className="folder-section">
@@ -125,10 +132,10 @@ export default function ReportsMode({ onViewReport }) {
                 <div key={dateKey} className="date-group">
                   {/* Date Group Header */}
                   <div className="date-group-header" onClick={() => toggleGroup(dateKey)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontWeight: 600 }}>
-                      <span style={{ fontSize: '1.5rem' }}>{'\uD83D\uDCC5'}</span>
+                    <div className="date-group-left">
+                      <span className="date-group-icon">{'\uD83D\uDCC5'}</span>
                       <span>{isToday ? 'Bugun' : dateKey}</span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                      <span className="date-group-meta">
                         ({items.length} rapor &middot; {totalSize} KB)
                       </span>
                     </div>
@@ -149,34 +156,33 @@ export default function ReportsMode({ onViewReport }) {
                       >
                         <div className="date-group-content">
                           {items.map((report) => {
-                            const date = new Date(report.modified);
-                            const timeStr = date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
+                            const timeStr = formatTime(report.modified);
                             const sizeKB = (report.size / 1024).toFixed(1);
 
                             return (
-                              <div key={report.filename} className="history-item">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-                                  <span style={{ fontSize: '2rem' }}>{'\uD83D\uDCC4'}</span>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{report.filename}</div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                                      <span>{timeStr}</span>
-                                      <span>{sizeKB} KB</span>
+                              <div key={report.filename} className="history-item report-item">
+                                <div className="report-main">
+                                  <span className="report-icon">{'\uD83D\uDCC4'}</span>
+                                  <div className="report-info">
+                                    <div className="report-title">{report.filename}</div>
+                                    <div className="history-meta-row">
+                                      <span className="meta-chip">{timeStr}</span>
+                                      <span className="meta-chip">{sizeKB} KB</span>
                                     </div>
                                   </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
+                                <div className="history-actions">
                                   <button
                                     onClick={() => viewReport(report.filename)}
                                     className="btn btn-secondary"
-                                    style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                                    style={{ padding: '8px 14px', fontSize: '0.85rem', minWidth: 86 }}
                                   >
                                     {'\uD83D\uDC41\uFE0F'} Gor
                                   </button>
                                   <button
                                     onClick={() => window.open(api.getReportPdfUrl(report.filename), '_blank')}
                                     className="btn btn-primary"
-                                    style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                                    style={{ padding: '8px 14px', fontSize: '0.85rem', minWidth: 86 }}
                                   >
                                     {'\uD83D\uDCE5'} PDF
                                   </button>

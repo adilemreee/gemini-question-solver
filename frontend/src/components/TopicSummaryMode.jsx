@@ -95,7 +95,7 @@ export default function TopicSummaryMode() {
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Yeni Özet Oluştur</div>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Çözülmüş sorulardan otomatik konu özeti ve formül kartları oluştur
+                Çözülmüş sorulardan otomatik konu özeti ve çalışma kartları oluştur
               </div>
             </div>
           </div>

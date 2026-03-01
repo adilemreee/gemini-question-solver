@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
+import LazyImage from './LazyImage';
 import toast from 'react-hot-toast';
 
-export default function HistoryMode({ onViewQuestion, onStartSolving, processing }) {
+export default function HistoryMode({ onViewQuestion, onStartSolving, processing, onOpenLightbox }) {
   const [questions, setQuestions] = useState([]);
   const [stats, setStats] = useState({ total: 0, success: 0, failed: 0, success_rate: 0 });
   const [topics, setTopics] = useState([]);
@@ -123,9 +124,18 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
     }
   };
 
+  const getQuestionImageUrl = useCallback((q) => {
+    const encodedFilename = encodeURIComponent(q.filename || '');
+    if (q.session_id && q.image_path && String(q.image_path).includes('/uploads/')) {
+      return `/api/session-image/${encodeURIComponent(q.session_id)}/${encodedFilename}`;
+    }
+    return api.getImageUrl(q.filename, q.topic || '');
+  }, []);
+
   const handleView = async (question) => {
     try {
       const q = await api.getQuestion(question.id);
+      const imageUrl = getQuestionImageUrl(q);
       onViewQuestion({
         type: 'question',
         title: q.filename,
@@ -138,7 +148,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
           status: q.status === 'success' ? 'Basarili' : 'Basarisiz',
           timeTaken: q.time_taken ?? null,
           createdAt: q.created_at,
-          imageUrl: api.getImageUrl(q.filename, q.topic || ''),
+          imageUrl,
         },
       });
     } catch (err) {
@@ -146,7 +156,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
     }
   };
 
-  const handleViewAll = async (dateKey, questionIds) => {
+  const handleViewAll = useCallback(async (dateKey, questionIds) => {
     try {
       const all = await Promise.all(questionIds.map((id) => api.getQuestion(id)));
       const successCount = all.filter((q) => q.status === 'success').length;
@@ -157,7 +167,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
       markdown += `- Basarisiz: ${failedCount}\n\n---\n`;
 
       all.forEach((q, idx) => {
-        const imageUrl = api.getImageUrl(q.filename, q.topic || '');
+        const imageUrl = getQuestionImageUrl(q);
         markdown += `\n## Soru ${idx + 1}: ${q.filename}\n`;
         markdown += `- Durum: ${q.status === 'success' ? 'Cozuldu' : 'Basarisiz'}\n`;
         markdown += `- Konu: ${q.topic || 'Genel'}\n`;
@@ -175,7 +185,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
     } catch (err) {
       toast.error('Cozumler yuklenemedi');
     }
-  };
+  }, [getQuestionImageUrl, onViewQuestion]);
 
   return (
     <div>
@@ -264,25 +274,25 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
                 >
                   {/* Date Group Header */}
                   <div className="date-group-header" onClick={() => toggleGroup(dateKey)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontWeight: 600 }}>
-                      <span style={{ fontSize: '1.5rem' }}>{'\uD83D\uDCC5'}</span>
+                    <div className="date-group-left">
+                      <span className="date-group-icon">{'\uD83D\uDCC5'}</span>
                       <span>{isToday ? 'Bugun' : dateKey}</span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>({qs.length} soru)</span>
+                      <span className="date-group-meta">({qs.length} soru)</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="date-group-right">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleViewAll(dateKey, qs.map((q) => q.id));
                         }}
                         className="btn btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', minWidth: 88 }}
                       >
                         {'\uD83D\uDCD6'} Tumu
                       </button>
-                      <div style={{ display: 'flex', gap: 12, fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--success)' }}>{successCount} basarili</span>
-                        <span style={{ color: 'var(--error)' }}>{failedCount} basarisiz</span>
+                      <div className="date-group-statuses">
+                        <span className="status-pill success">{successCount} basarili</span>
+                        <span className="status-pill error">{failedCount} basarisiz</span>
                       </div>
                       <span style={{ transition: 'transform 0.2s ease', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '1.2rem' }}>
                         {'\u25BC'}
@@ -301,38 +311,45 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
                         style={{ overflow: 'hidden' }}
                       >
                         <div className="date-group-content">
-                          {qs.map((q, qIdx) => {
+                          {qs.map((q) => {
                             const time = new Date(q.created_at);
                             const timeStr = time.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
+                            const imageUrl = getQuestionImageUrl(q);
                             return (
                               <div
                                 key={q.id}
                                 className={`history-item ${q.status === 'success' ? 'success-item' : 'failed-item'}`}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-                                  <span style={{ fontSize: '2rem' }}>
-                                    {q.status === 'success' ? '\u2705' : '\u274C'}
-                                  </span>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{q.filename}</div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                                      {q.topic && (
-                                        <span style={{
-                                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)',
-                                          color: 'white', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem'
-                                        }}>
-                                          {q.topic}
-                                        </span>
-                                      )}
-                                      <span>{q.time_taken ? q.time_taken.toFixed(1) + 's' : '-'}</span>
-                                      <span>{timeStr}</span>
-                                      {q.retry_count > 0 && (
-                                        <span style={{ color: 'var(--warning)' }}>{q.retry_count}x tekrar</span>
-                                      )}
+                                <div className="history-main">
+                                  <button
+                                    type="button"
+                                    className="history-thumb-btn"
+                                    onClick={() => onOpenLightbox?.({ src: imageUrl, alt: q.filename })}
+                                    aria-label={`${q.filename} buyut`}
+                                  >
+                                    <LazyImage
+                                      src={imageUrl}
+                                      alt={q.filename}
+                                      className="history-thumb"
+                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                    />
+                                    <span className="zoom-icon">+</span>
+                                  </button>
+
+                                  <div className="history-info">
+                                    <div className="history-title-row">
+                                      <span className="history-status">{q.status === 'success' ? '\u2705' : '\u274C'}</span>
+                                      <div style={{ fontWeight: 700, marginBottom: 2 }}>{q.filename}</div>
+                                    </div>
+                                    <div className="history-meta-row">
+                                      {q.topic && <span className="topic-badge">{q.topic}</span>}
+                                      <span className="meta-chip">{q.time_taken ? q.time_taken.toFixed(1) + 's' : '-'}</span>
+                                      <span className="meta-chip">{timeStr}</span>
+                                      {q.retry_count > 0 && <span className="meta-chip warning">{q.retry_count}x tekrar</span>}
                                     </div>
                                   </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
+                                <div className="history-actions">
                                   {q.status === 'failed' && (
                                     <button
                                       onClick={() => handleRetry(q.id)}
