@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { renderSolution } from '../lib/markdown';
+import LazyImage from './LazyImage';
 
-export default function ResultsSection({ results, mode, onViewQuestion }) {
+export default function ResultsSection({ results, mode, onViewQuestion, onOpenLightbox }) {
   if (!results || results.length === 0) return null;
   const successCount = results.filter((r) => r.success).length;
 
@@ -30,12 +31,18 @@ export default function ResultsSection({ results, mode, onViewQuestion }) {
         >
           <div className="result-header">
             {/* Thumbnail */}
-            <img
-              src={`/api/image/${encodeURIComponent(result.filename)}`}
-              alt={result.filename}
-              className="result-image"
-              onError={(e) => (e.target.style.display = 'none')}
-            />
+            <button
+              type="button"
+              onClick={() => onOpenLightbox?.({ src: `/api/image/${encodeURIComponent(result.filename)}`, alt: result.filename })}
+              style={{ border: 'none', background: 'transparent', padding: 0 }}
+            >
+              <LazyImage
+                src={`/api/image/${encodeURIComponent(result.filename)}`}
+                alt={result.filename}
+                className="result-image"
+                onError={(e) => (e.target.style.display = 'none')}
+              />
+            </button>
             {/* Info */}
             <div className="result-info">
               <h3>
@@ -51,7 +58,8 @@ export default function ResultsSection({ results, mode, onViewQuestion }) {
               onClick={() => onViewQuestion({
                 type: 'result',
                 title: result.filename,
-                content: result.success ? renderSolution(result.solution) : result.error,
+                raw: result.success ? result.solution : result.error,
+                contentType: result.success ? 'markdown' : 'text',
                 isError: !result.success,
               })}
               className="btn btn-secondary"

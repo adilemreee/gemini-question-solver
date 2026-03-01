@@ -58,7 +58,7 @@ def validate_api_key():
     return True
 
 
-async def main(input_dir: Path, output_path: Path):
+async def main(input_dir: Path, output_path: Path, max_concurrent: int):
     """Main execution function"""
     print_banner()
     
@@ -88,7 +88,7 @@ async def main(input_dir: Path, output_path: Path):
     
     try:
         client = GeminiClient()
-        processor = ParallelProcessor(client)
+        processor = ParallelProcessor(client, max_concurrent=max_concurrent)
         results = await processor.process_all(images)
     except ValueError as e:
         console.print(f"[red]❌ {e}[/red]")
@@ -161,13 +161,17 @@ API Key:
     )
     
     args = parser.parse_args()
+
+    if args.concurrent < 1:
+        console.print("[red]❌ --concurrent en az 1 olmalidir[/red]")
+        sys.exit(1)
     
     # Ensure directories exist
     args.input.mkdir(parents=True, exist_ok=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     
     # Run async main
-    exit_code = asyncio.run(main(args.input, args.output))
+    exit_code = asyncio.run(main(args.input, args.output, args.concurrent))
     sys.exit(exit_code)
 
 

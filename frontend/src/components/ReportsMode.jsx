@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
-import { renderSolution } from '../lib/markdown';
 import toast from 'react-hot-toast';
 
 export default function ReportsMode({ onViewReport }) {
@@ -25,10 +24,36 @@ export default function ReportsMode({ onViewReport }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const groupedEntries = useMemo(() => {
+    const sorted = [...reports].sort(
+      (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()
+    );
+    const groupedMap = new Map();
+    sorted.forEach((report) => {
+      const dateKey = new Date(report.modified).toLocaleDateString('tr-TR', {
+        timeZone: 'Europe/Istanbul',
+      });
+      if (!groupedMap.has(dateKey)) groupedMap.set(dateKey, []);
+      groupedMap.get(dateKey).push(report);
+    });
+    return Array.from(groupedMap.entries());
+  }, [reports]);
+
+  useEffect(() => {
+    const allKeys = new Set(groupedEntries.map(([key]) => key));
+    setCollapsedGroups(allKeys);
+  }, [groupedEntries]);
+
   const viewReport = async (filename) => {
     try {
       const data = await api.getReport(filename);
-      onViewReport({ type: 'report', title: filename, content: renderSolution(data.content), filename });
+      onViewReport({
+        type: 'report',
+        title: filename,
+        filename,
+        raw: data.content,
+        contentType: 'markdown',
+      });
     } catch (err) {
       toast.error('Rapor yuklenemedi');
     }
@@ -53,15 +78,6 @@ export default function ReportsMode({ onViewReport }) {
       return next;
     });
   };
-
-  // Group reports by date
-  const grouped = {};
-  reports.forEach((r) => {
-    const date = new Date(r.modified);
-    const key = date.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(r);
-  });
 
   return (
     <div>
@@ -100,7 +116,7 @@ export default function ReportsMode({ onViewReport }) {
         {/* Reports grouped by date */}
         {!loading && reports.length > 0 && (
           <div>
-            {Object.entries(grouped).map(([dateKey, items]) => {
+            {groupedEntries.map(([dateKey, items]) => {
               const collapsed = collapsedGroups.has(dateKey);
               const isToday = dateKey === new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
               const totalSize = (items.reduce((sum, r) => sum + r.size, 0) / 1024).toFixed(1);

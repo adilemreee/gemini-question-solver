@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
-import { renderSolution } from '../lib/markdown';
 import toast from 'react-hot-toast';
 
 export default function HistoryMode({ onViewQuestion, onStartSolving, processing }) {
@@ -34,13 +33,26 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
 
   useEffect(() => { load(); }, [load]);
 
-  const grouped = {};
-  questions.forEach((q) => {
-    const date = new Date(q.created_at);
-    const key = date.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(q);
-  });
+  const groupedEntries = useMemo(() => {
+    const sorted = [...questions].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    const groupedMap = new Map();
+    sorted.forEach((question) => {
+      const key = new Date(question.created_at).toLocaleDateString('tr-TR', {
+        timeZone: 'Europe/Istanbul',
+      });
+      if (!groupedMap.has(key)) groupedMap.set(key, []);
+      groupedMap.get(key).push(question);
+    });
+    return Array.from(groupedMap.entries());
+  }, [questions]);
+
+  useEffect(() => {
+    const today = new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
+    const nextCollapsed = new Set(groupedEntries.map(([key]) => key).filter((key) => key !== today));
+    setCollapsedGroups(nextCollapsed);
+  }, [groupedEntries]);
 
   const toggleGroup = (key) => {
     setCollapsedGroups((prev) => {
@@ -114,26 +126,20 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
   const handleView = async (question) => {
     try {
       const q = await api.getQuestion(question.id);
-      let content = '';
-      if (q.solution) {
-        content = `<div style="margin-bottom:24px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px;">
-          <img src="/api/image/${encodeURIComponent(q.filename)}?topic=${encodeURIComponent(q.topic || '')}" style="max-height:200px;display:block;margin:0 auto 16px;border-radius:8px;" onerror="this.style.display='none'">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:rgba(255,255,255,0.6)">
-            <div><strong style="color:#f1f5f9">Konu:</strong> ${q.topic || 'Genel'}</div>
-            <div><strong style="color:#f1f5f9">Durum:</strong> ${q.status === 'success' ? 'Basarili' : 'Basarisiz'}</div>
-            <div><strong style="color:#f1f5f9">Sure:</strong> ${q.time_taken ? q.time_taken.toFixed(2) + 's' : '-'}</div>
-            <div><strong style="color:#f1f5f9">Tarih:</strong> ${new Date(q.created_at).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}</div>
-          </div>
-        </div>` + renderSolution(q.solution);
-      } else if (q.error) {
-        content = `<div style="color:#ef4444;padding:16px;border:1px solid rgba(239,68,68,0.3);border-radius:12px;background:rgba(239,68,68,0.08)">Hata: ${q.error}</div>`;
-      }
       onViewQuestion({
         type: 'question',
         title: q.filename,
-        content,
+        raw: q.solution || `Hata: ${q.error || 'Bilinmeyen hata'}`,
+        contentType: q.solution ? 'markdown' : 'text',
         isError: q.status !== 'success',
         questionId: q.id,
+        meta: {
+          topic: q.topic || 'Genel',
+          status: q.status === 'success' ? 'Basarili' : 'Basarisiz',
+          timeTaken: q.time_taken ?? null,
+          createdAt: q.created_at,
+          imageUrl: api.getImageUrl(q.filename, q.topic || ''),
+        },
       });
     } catch (err) {
       toast.error('Soru yuklenemedi');
@@ -143,34 +149,28 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
   const handleViewAll = async (dateKey, questionIds) => {
     try {
       const all = await Promise.all(questionIds.map((id) => api.getQuestion(id)));
-      let html = `<div style="margin-bottom:20px;padding:14px;background:rgba(99,102,241,0.06);border-radius:10px;text-align:center;font-size:13px;color:rgba(255,255,255,0.5)">
-        <span style="color:#34d399;font-weight:600">${all.filter(q => q.status === 'success').length} basarili</span>
-        <span style="margin:0 8px">&middot;</span>
-        <span style="color:#f87171;font-weight:600">${all.filter(q => q.status !== 'success').length} basarisiz</span>
-        <span style="margin:0 8px">&middot;</span>
-        Toplam ${all.length} soru
-      </div>`;
+      const successCount = all.filter((q) => q.status === 'success').length;
+      const failedCount = all.length - successCount;
+      let markdown = `# ${dateKey} Tum Cozumler\n\n`;
+      markdown += `- Toplam: ${all.length}\n`;
+      markdown += `- Basarili: ${successCount}\n`;
+      markdown += `- Basarisiz: ${failedCount}\n\n---\n`;
+
       all.forEach((q, idx) => {
-        const solution = q.solution ? renderSolution(q.solution) : (q.error ? `<div style="color:#f87171;padding:14px;border:1px solid rgba(248,113,113,0.2);border-radius:10px;background:rgba(248,113,113,0.06);margin-top:12px">Hata: ${q.error}</div>` : '');
-        html += `<div style="margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.05)">
-          <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:14px">
-            <img src="/api/image/${encodeURIComponent(q.filename)}?topic=${encodeURIComponent(q.topic || '')}" style="width:70px;height:70px;object-fit:cover;border-radius:10px" onerror="this.style.display='none'">
-            <div>
-              <div style="font-size:15px;font-weight:600;margin-bottom:6px">Soru ${idx + 1}: ${q.filename}</div>
-              <div style="display:flex;gap:12px;font-size:12px;color:rgba(255,255,255,0.4)">
-                <span>${q.status === 'success' ? 'Cozuldu' : 'Basarisiz'}</span>
-                <span>${q.topic || 'Genel'}</span>
-                <span>${q.time_taken ? q.time_taken.toFixed(1) + 's' : '-'}</span>
-              </div>
-            </div>
-          </div>
-          ${solution}
-        </div>`;
+        const imageUrl = api.getImageUrl(q.filename, q.topic || '');
+        markdown += `\n## Soru ${idx + 1}: ${q.filename}\n`;
+        markdown += `- Durum: ${q.status === 'success' ? 'Cozuldu' : 'Basarisiz'}\n`;
+        markdown += `- Konu: ${q.topic || 'Genel'}\n`;
+        markdown += `- Sure: ${q.time_taken ? `${q.time_taken.toFixed(1)}s` : '-'}\n\n`;
+        markdown += `![${q.filename}](${imageUrl})\n\n`;
+        markdown += q.solution || `Hata: ${q.error || 'Bilinmeyen hata'}`;
+        markdown += '\n\n---\n';
       });
       onViewQuestion({
         type: 'question',
         title: `${dateKey} - Tum Cozumler (${all.length} soru)`,
-        content: html,
+        raw: markdown,
+        contentType: 'markdown',
       });
     } catch (err) {
       toast.error('Cozumler yuklenemedi');
@@ -248,7 +248,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
         {/* Questions grouped by date */}
         {!loading && questions.length > 0 && (
           <div>
-            {Object.entries(grouped).map(([dateKey, qs], groupIdx) => {
+            {groupedEntries.map(([dateKey, qs], groupIdx) => {
               const collapsed = collapsedGroups.has(dateKey);
               const successCount = qs.filter((q) => q.status === 'success').length;
               const failedCount = qs.length - successCount;

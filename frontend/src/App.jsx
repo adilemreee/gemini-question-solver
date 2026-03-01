@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from './lib/api';
 import FolderMode from './components/FolderMode';
@@ -7,20 +7,20 @@ import ReportsMode from './components/ReportsMode';
 import HistoryMode from './components/HistoryMode';
 import TopicSummaryMode from './components/TopicSummaryMode';
 import RateLimitDashboard from './components/RateLimitDashboard';
-import ProgressSection from './components/ProgressSection';
-import ResultsSection from './components/ResultsSection';
+import LiveTimelinePanel from './components/LiveTimelinePanel';
 import ReportModal from './components/ReportModal';
+import ImageLightbox from './components/ImageLightbox';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useProgress } from './hooks/useProgress';
 import toast from 'react-hot-toast';
 
 const TABS = [
-  { id: 'folder', label: 'Klasorden Tara', emoji: '\uD83D\uDCC1' },
-  { id: 'upload', label: 'Dosya Yukle', emoji: '\uD83D\uDCE4' },
-  { id: 'reports', label: 'Raporlar', emoji: '\uD83D\uDCC4' },
-  { id: 'history', label: 'Gecmis', emoji: '\uD83D\uDCDA' },
-  { id: 'topics', label: 'Konu Ozeti', emoji: '\uD83D\uDCDD' },
-  { id: 'ratelimit', label: 'API Kullanim', emoji: '\uD83D\uDCCA' },
+  { id: 'folder', label: 'Klasor Tarama', short: 'Klasor', emoji: '\uD83D\uDCC1' },
+  { id: 'upload', label: 'Dosya Yukleme', short: 'Yukle', emoji: '\uD83D\uDCE4' },
+  { id: 'reports', label: 'Raporlar', short: 'Rapor', emoji: '\uD83D\uDCC4' },
+  { id: 'history', label: 'Gecmis', short: 'Gecmis', emoji: '\uD83D\uDCDA' },
+  { id: 'topics', label: 'Konu Ozeti', short: 'Ozet', emoji: '\uD83D\uDCDD' },
+  { id: 'ratelimit', label: 'API Kullanim', short: 'API', emoji: '\uD83D\uDCCA' },
 ];
 
 export default function App() {
@@ -30,6 +30,9 @@ export default function App() {
   const [progressData, setProgressData] = useState(null);
   const [results, setResults] = useState(null);
   const [modalData, setModalData] = useState(null);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const lastTickRef = useRef(0);
 
   useEffect(() => {
     api.getStatus().then((d) => {
@@ -39,7 +42,7 @@ export default function App() {
 
   const handleComplete = useCallback((data) => {
     setProcessing(false);
-    setProgressData(null);
+    setProgressData(data);
     setResults(data.results);
     const ok = data.results.filter((r) => r.success).length;
     toast.success(`${ok} / ${data.total || data.results.length} soru basariyla cozuldu`);
@@ -55,101 +58,152 @@ export default function App() {
   const ws = useWebSocket(handleComplete, handleError);
   const { start: startPolling } = useProgress(handleComplete, handleError);
 
+  const handleTick = useCallback((data) => {
+    const now = Date.now();
+    if (data?.status !== 'completed' && now - lastTickRef.current < 120) return;
+    lastTickRef.current = now;
+
+    const nextData = data?.status === 'completed'
+      ? data
+      : { ...data, results: undefined };
+    setProgressData(nextData);
+
+    if (data?.latest_result?.filename) {
+      setLiveEvents((prev) => {
+        const exists = prev.find((e) => e.filename === data.latest_result.filename);
+        if (exists) return prev;
+        return [{ ...data.latest_result, timestamp: Date.now() }, ...prev].slice(0, 30);
+      });
+    }
+  }, []);
+
   const startSolving = useCallback(
     (sessionId) => {
       setProcessing(true);
       setResults(null);
+      setLiveEvents([]);
       setProgressData({ progress: 0, total: 0, results: [] });
       
       // Try WebSocket first, fall back to polling
       try {
-        ws.start(sessionId, (data) => setProgressData(data));
+        ws.start(sessionId, handleTick);
       } catch {
-        startPolling(sessionId, (data) => setProgressData(data));
+        startPolling(sessionId, handleTick);
       }
     },
-    [ws, startPolling]
+    [ws, startPolling, handleTick]
   );
 
   const openModal = useCallback((data) => setModalData(data), []);
   const closeModal = useCallback(() => setModalData(null), []);
+  const openLightbox = useCallback((img) => setLightboxImage(img), []);
+  const closeLightbox = useCallback(() => setLightboxImage(null), []);
 
   return (
     <>
       {/* Background decoration */}
       <div className="bg-decoration" />
 
-      <div className="container">
-        {/* Header */}
-        <header className="header">
-          <h1>
-            {'\uD83E\uDDE0'} Gemini Question Solver
-          </h1>
-          <p>
-            Soru fotograflarini yukle veya klasorden tara, paralel olarak coz
-          </p>
-        </header>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-icon">{'\uD83E\uDDE0'}</div>
+            <div>
+              <div className="brand-title">Gemini Solver</div>
+              <div className="brand-subtitle">Akademik Cozum Studyo</div>
+            </div>
+          </div>
 
-        {/* Status bar */}
-        <div className="status-bar">
-          <div className={`status-dot ${
-            apiReady === null ? 'checking' : apiReady ? 'connected' : 'disconnected'
-          }`} />
-          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            {apiReady === null ? 'API baglantisi kontrol ediliyor...' : apiReady ? 'API baglantisi hazir \u2713' : '\u26A0\uFE0F GEMINI_API_KEY ayarlanmamis'}
-          </span>
-        </div>
+          <nav className="sidebar-nav">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { setMode(tab.id); setResults(null); }}
+                className={`sidebar-link ${mode === tab.id ? 'active' : ''}`}
+              >
+                <span className="sidebar-emoji">{tab.emoji}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
 
-        {/* Mode Tabs */}
-        <div className="mode-tabs">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { setMode(tab.id); setResults(null); }}
-              className={`mode-tab ${mode === tab.id ? 'active' : ''}`}
-            >
-              {tab.emoji} {tab.label}
-            </button>
-          ))}
-        </div>
+          <div className="sidebar-status">
+            <div className={`status-dot ${
+              apiReady === null ? 'checking' : apiReady ? 'connected' : 'disconnected'
+            }`} />
+            <span>{apiReady === null ? 'API kontrol ediliyor' : apiReady ? 'API hazir' : 'API anahtari eksik'}</span>
+          </div>
+        </aside>
 
-        {/* Progress */}
-        <AnimatePresence>
-          {processing && progressData && <ProgressSection data={progressData} />}
-        </AnimatePresence>
+        <main className="main">
+          <section className="hero">
+            <div>
+              <div className="hero-eyebrow">Gemini Question Solver</div>
+              <h1>Akademik soru cozum akisi</h1>
+              <p>Soru fotograflarini yukle veya klasorden tara, paralel olarak coz ve duzenli raporlar al.</p>
+            </div>
+          </section>
 
-        {/* Mode Content */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={mode}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            {mode === 'folder' && (
-              <FolderMode onStartSolving={startSolving} processing={processing} progressData={progressData} />
+          <div className="mode-switch">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { setMode(tab.id); setResults(null); }}
+                className={`chip ${mode === tab.id ? 'active' : ''}`}
+              >
+                {tab.short}
+              </button>
+            ))}
+          </div>
+
+          <div className="content-stack">
+            <section className="workflow-column">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={mode}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {mode === 'folder' && (
+                    <FolderMode
+                      onStartSolving={startSolving}
+                      processing={processing}
+                      progressData={progressData}
+                      onOpenLightbox={openLightbox}
+                    />
+                  )}
+                  {mode === 'upload' && (
+                    <UploadMode onStartSolving={startSolving} processing={processing} onOpenLightbox={openLightbox} />
+                  )}
+                  {mode === 'reports' && <ReportsMode onViewReport={openModal} />}
+                  {mode === 'history' && (
+                    <HistoryMode onViewQuestion={openModal} onStartSolving={startSolving} processing={processing} />
+                  )}
+                  {mode === 'topics' && <TopicSummaryMode />}
+                  {mode === 'ratelimit' && <RateLimitDashboard />}
+                </motion.div>
+              </AnimatePresence>
+            </section>
+
+            {mode === 'folder' && processing && (
+              <aside className="live-column">
+                <LiveTimelinePanel
+                  processing={processing}
+                  progressData={progressData}
+                  results={results}
+                  liveEvents={liveEvents}
+                  onViewQuestion={openModal}
+                  onOpenLightbox={openLightbox}
+                />
+              </aside>
             )}
-            {mode === 'upload' && (
-              <UploadMode onStartSolving={startSolving} processing={processing} />
-            )}
-            {mode === 'reports' && <ReportsMode onViewReport={openModal} />}
-            {mode === 'history' && (
-              <HistoryMode onViewQuestion={openModal} onStartSolving={startSolving} processing={processing} />
-            )}
-            {mode === 'topics' && <TopicSummaryMode />}
-            {mode === 'ratelimit' && <RateLimitDashboard />}
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        </main>
+      </div>
 
-        {/* Completion Banner & Results - below mode content */}
-        <AnimatePresence>
-          {results && (
-            <ResultsSection results={results} mode={mode} onViewQuestion={openModal} />
-          )}
-        </AnimatePresence>
-      </div>{/* container end */}
-
+      <ImageLightbox image={lightboxImage} onClose={closeLightbox} />
       {/* Modal */}
       <AnimatePresence>
         {modalData && <ReportModal data={modalData} onClose={closeModal} />}

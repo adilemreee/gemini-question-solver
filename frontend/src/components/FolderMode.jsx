@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../lib/api';
+import LazyImage from './LazyImage';
 import toast from 'react-hot-toast';
 
-export default function FolderMode({ onStartSolving, processing, progressData }) {
+export default function FolderMode({ onStartSolving, processing, progressData, onOpenLightbox }) {
   const [files, setFiles] = useState([]);
   const [topicFolders, setTopicFolders] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
@@ -223,13 +224,28 @@ export default function FolderMode({ onStartSolving, processing, progressData })
                   className={`file-card ${isSelected ? 'selected' : ''}`}
                 >
                   <div style={{ position: 'relative' }}>
-                    <img
-                      src={api.getImageUrl(file.filename, currentTopic)}
-                      alt={file.filename}
-                      style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: '10px 10px 0 0' }}
-                      loading="lazy"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
+                    <button
+                      type="button"
+                      className="thumb-wrap"
+                      style={{ display: 'block', width: '100%', border: 'none', padding: 0, background: 'transparent' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenLightbox?.({
+                          src: api.getImageUrl(file.filename, currentTopic),
+                          alt: file.filename,
+                        });
+                      }}
+                      aria-label={`${file.filename} buyut`}
+                    >
+                      <LazyImage
+                        src={api.getImageUrl(file.filename, currentTopic)}
+                        alt={file.filename}
+                        className="timeline-thumb"
+                        style={{ width: '100%', height: 110, borderRadius: '10px 10px 0 0' }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <span className="zoom-icon">+</span>
+                    </button>
                     <div className="thumb-overlay" />
                     {/* Checkbox */}
                     <div style={{

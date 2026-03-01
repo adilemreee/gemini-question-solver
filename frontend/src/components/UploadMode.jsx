@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
+import LazyImage from './LazyImage';
 import toast from 'react-hot-toast';
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'];
 
-export default function UploadMode({ onStartSolving, processing }) {
+export default function UploadMode({ onStartSolving, processing, onOpenLightbox }) {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [solving, setSolving] = useState(false);
@@ -35,6 +36,10 @@ export default function UploadMode({ onStartSolving, processing }) {
   const clearAll = useCallback(() => {
     previews.forEach((url) => URL.revokeObjectURL(url));
     setFiles([]); setPreviews([]);
+  }, [previews]);
+
+  useEffect(() => () => {
+    previews.forEach((url) => URL.revokeObjectURL(url));
   }, [previews]);
 
   const handleSolve = useCallback(async () => {
@@ -110,7 +115,24 @@ export default function UploadMode({ onStartSolving, processing }) {
                   >
                     <div style={{ position: 'relative' }}>
                       {previews[index] ? (
-                        <img src={previews[index]} alt={file.name} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
+                        <button
+                          type="button"
+                          className="thumb-wrap"
+                          style={{ display: 'block', width: '100%', border: 'none', padding: 0, background: 'transparent' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenLightbox?.({ src: previews[index], alt: file.name });
+                          }}
+                          aria-label={`${file.name} buyut`}
+                        >
+                          <LazyImage
+                            src={previews[index]}
+                            alt={file.name}
+                            className="timeline-thumb"
+                            style={{ width: '100%', height: 110, borderRadius: '10px 10px 0 0', pointerEvents: 'none' }}
+                          />
+                          <span className="zoom-icon">+</span>
+                        </button>
                       ) : (
                         <div style={{ width: '100%', height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', opacity: 0.3 }}>
                           {'\uD83D\uDDBC\uFE0F'}
