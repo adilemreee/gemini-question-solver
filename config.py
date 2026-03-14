@@ -29,10 +29,22 @@ LOGS_DIR = BASE_DIR / "logs"
 # Supported image formats
 SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
+# Valid topic names for AI classification
+VALID_TOPICS = [
+    "Matematik", "Fizik", "Kimya", "Biyoloji",
+    "Türkçe", "Edebiyat", "Tarih", "Coğrafya",
+    "Felsefe", "Din Kültürü", "İngilizce", "Genel",
+]
+
 # Prompt template for question solving
 QUESTION_PROMPT = """Bu soruyu çöz.
 
-Lütfen şu formatta cevapla:
+ÖNEMLİ: Cevabının en başına, ilk satıra, bu sorunun hangi derse ait olduğunu şu formatta yaz:
+[DERS: DersAdı]
+
+Ders adı şunlardan biri olmalı: Matematik, Fizik, Kimya, Biyoloji, Türkçe, Edebiyat, Tarih, Coğrafya, Felsefe, Din Kültürü, İngilizce, Genel
+
+Sonra şu formatta cevapla:
 1. **Soru Analizi**: Sorunun ne istediğini kısaca açıkla
 2. **Çözüm Adımları**: Adım adım çözümü göster
 3. **Cevap**: Net ve kesin cevabı belirt

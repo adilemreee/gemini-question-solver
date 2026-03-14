@@ -22,11 +22,45 @@ from config import (
     MAX_RETRIES,
     RETRY_DELAY,
     REQUEST_TIMEOUT,
+    VALID_TOPICS,
 )
 
 console = Console()
 
-# Topic detection patterns - TYT/AYT için genişletilmiş konu tespiti
+# ── AI-based topic parsing ──────────────────────────────────────────
+_TOPIC_TAG_RE = re.compile(r'\[DERS:\s*([^\]]+)\]', re.IGNORECASE)
+_VALID_SET = {t.lower() for t in VALID_TOPICS}
+
+def parse_topic_from_ai(text: str) -> Optional[str]:
+    """Extract topic from [DERS: X] tag in AI response. Returns None if not found."""
+    if not text:
+        return None
+    m = _TOPIC_TAG_RE.search(text[:500])  # only check first 500 chars
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    # exact match
+    for t in VALID_TOPICS:
+        if raw.lower() == t.lower():
+            return t
+    # fuzzy: startswith
+    for t in VALID_TOPICS:
+        if raw.lower().startswith(t.lower()[:4]):
+            return t
+    return None
+
+def strip_topic_tag(text: str) -> str:
+    """Remove [DERS: X] tag from solution text so it doesn't show in UI."""
+    if not text:
+        return text
+    return _TOPIC_TAG_RE.sub('', text, count=1).lstrip('\n').lstrip()
+
+
+# ── Weighted topic patterns ─────────────────────────────────────────
+# Format: (weight, pattern)
+# weight 5 = very specific to this subject
+# weight 3 = moderately specific
+# weight 1 = generic / appears in multiple subjects
 TOPIC_PATTERNS = {
     'Matematik': [
         # Temel Matematik (TYT)
@@ -292,32 +326,56 @@ TOPIC_PATTERNS = {
 
 def detect_topic(text: str) -> Tuple[str, Optional[str]]:
     """
-    Detect topic from solution text
+    Detect topic from solution text using weighted scoring.
+    Multi-word matches score higher (more specific).
+    Requires minimum confidence gap between top 2 topics.
     Returns: (topic, subtopic)
     """
     if not text:
         return "Genel", None
-    
+
+    # First try AI tag
+    ai_topic = parse_topic_from_ai(text)
+    if ai_topic:
+        return ai_topic, None
+
     text_lower = text.lower()
     scores = {}
-    
+
     for topic, patterns in TOPIC_PATTERNS.items():
-        score = 0
+        score = 0.0
         for pattern in patterns:
             matches = re.findall(pattern, text_lower, re.IGNORECASE)
-            score += len(matches)
+            for match in matches:
+                # Multi-word matches are more specific → higher weight
+                if isinstance(match, tuple):
+                    match = match[0]
+                word_count = len(match.split())
+                if word_count >= 3:
+                    score += 5.0   # very specific compound phrase
+                elif word_count == 2:
+                    score += 3.0   # moderately specific
+                else:
+                    score += 1.0   # single generic word
         if score > 0:
             scores[topic] = score
-    
+
     if not scores:
         return "Genel", None
-    
-    # Get topic with highest score
-    best_topic = max(scores, key=scores.get)
-    
-    # Subtopic detection could be added here
+
+    sorted_topics = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    best_topic, best_score = sorted_topics[0]
+
+    # Confidence check: require 40% gap over second-best
+    if len(sorted_topics) >= 2:
+        second_score = sorted_topics[1][1]
+        gap_ratio = (best_score - second_score) / best_score if best_score > 0 else 0
+        if gap_ratio < 0.15:
+            # Too close → ambiguous, check if best has at least 2x
+            if best_score < second_score * 1.5:
+                return "Genel", None
+
     subtopic = None
-    
     return best_topic, subtopic
 
 
@@ -376,12 +434,21 @@ class GeminiClient:
                 self._total_time += time_taken
                 
                 solution = response.text
-                topic, subtopic = detect_topic(solution)
+                
+                # Try AI-based topic detection first, fall back to regex
+                ai_topic = parse_topic_from_ai(solution)
+                clean_solution = strip_topic_tag(solution)
+                
+                if ai_topic:
+                    topic = ai_topic
+                    subtopic = None
+                else:
+                    topic, subtopic = detect_topic(clean_solution)
                 
                 return {
                     "filename": filename,
                     "success": True,
-                    "solution": solution,
+                    "solution": clean_solution,
                     "error": None,
                     "time_taken": time_taken,
                     "topic": topic,
