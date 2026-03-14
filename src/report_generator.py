@@ -13,6 +13,7 @@ from rich.console import Console
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from config import OUTPUT_DIR
+from src.markdown_utils import normalize_markdown
 
 console = Console()
 
@@ -100,7 +101,7 @@ class ReportGenerator:
                 image_path = Path(questions_dir) / filename
                 if image_path.exists():
                     rel_path = os.path.relpath(image_path, self.output_dir)
-                    image_url = Path(rel_path).as_posix()
+                    image_url = quote(Path(rel_path).as_posix(), safe="/")
                 else:
                     topic = result.get("topic")
                     image_url = f"/api/image/{quote(filename)}"
@@ -150,7 +151,7 @@ class ReportGenerator:
         ])
         
         # Write report
-        report_content = "\n".join(report_lines)
+        report_content = normalize_markdown("\n".join(report_lines))
         output_path.write_text(report_content, encoding="utf-8")
         
         console.print(f"\n[bold green]📄 Report generated: {output_path}[/bold green]")

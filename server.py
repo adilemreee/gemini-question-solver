@@ -6,11 +6,12 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import quote as urlquote
+from urllib.parse import parse_qs, quote as urlquote, unquote, urlparse
 from pydantic import BaseModel
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Query, Body, WebSocket, WebSocketDisconnect
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import GEMINI_API_KEY, OUTPUT_DIR, QUESTIONS_DIR
 from src.gemini_client import GeminiClient
+from src.markdown_utils import normalize_markdown
 from src.parallel_processor import ParallelProcessor
 from src.report_generator import ReportGenerator
 import database as db
@@ -58,6 +60,8 @@ UPLOAD_EXT_BY_MIME = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+KATEX_RENDER_SCRIPT = Path(__file__).parent / "src" / "katex_render.mjs"
+KATEX_CSS_PATH = Path(__file__).parent / "frontend" / "node_modules" / "katex" / "dist" / "katex.min.css"
 
 
 def _is_within_base(path: Path, base: Path) -> bool:
@@ -137,6 +141,245 @@ def _safe_session_id(session_id: str) -> str:
     if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", session_id or ""):
         raise HTTPException(status_code=400, detail="Invalid session id")
     return session_id
+
+
+def _resolve_question_image_path(filename: str, topic: Optional[str] = None) -> Optional[Path]:
+    try:
+        safe_filename = _safe_basename(filename, "filename")
+    except HTTPException:
+        return None
+
+    if topic:
+        try:
+            safe_topic = _safe_topic_segment(topic)
+        except HTTPException:
+            safe_topic = None
+        if safe_topic:
+            topic_path = (QUESTIONS_DIR / safe_topic / safe_filename).resolve()
+            if _is_within_base(topic_path, QUESTIONS_DIR) and topic_path.exists() and topic_path.is_file():
+                return topic_path
+
+    root_path = (QUESTIONS_DIR / safe_filename).resolve()
+    if _is_within_base(root_path, QUESTIONS_DIR) and root_path.exists() and root_path.is_file():
+        return root_path
+
+    for subfolder in QUESTIONS_DIR.iterdir():
+        if not subfolder.is_dir():
+            continue
+        sub_path = (subfolder / safe_filename).resolve()
+        if _is_within_base(sub_path, QUESTIONS_DIR) and sub_path.exists() and sub_path.is_file():
+            return sub_path
+
+    return None
+
+
+def _resolve_session_image_path(session_id: str, filename: str) -> Optional[Path]:
+    try:
+        safe_session_id = _safe_session_id(session_id)
+        safe_filename = _safe_basename(filename, "filename")
+    except HTTPException:
+        return None
+
+    session_dir = (UPLOAD_DIR / safe_session_id).resolve()
+    if not _is_within_base(session_dir, UPLOAD_DIR) or not session_dir.exists() or not session_dir.is_dir():
+        return None
+
+    image_path = (session_dir / safe_filename).resolve()
+    if (
+        not _is_within_base(image_path, session_dir)
+        or not image_path.exists()
+        or not image_path.is_file()
+        or image_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES
+    ):
+        return None
+
+    return image_path
+
+
+def _resolve_report_asset_url(asset_url: str, report_path: Path) -> str:
+    parsed = urlparse(asset_url)
+
+    if parsed.scheme in {"http", "https", "file", "data"}:
+        return asset_url
+
+    path = unquote(parsed.path)
+
+    if path.startswith("/api/image/"):
+        filename = path.rsplit("/", 1)[-1]
+        topic = parse_qs(parsed.query).get("topic", [None])[0]
+        image_path = _resolve_question_image_path(filename, topic)
+        return image_path.as_uri() if image_path else asset_url
+
+    if path.startswith("/api/session-image/"):
+        parts = [part for part in path.split("/") if part]
+        if len(parts) >= 4:
+            image_path = _resolve_session_image_path(parts[2], parts[3])
+            if image_path:
+                return image_path.as_uri()
+        return asset_url
+
+    if not path.startswith("/"):
+        candidate = (report_path.parent / path).resolve()
+        if candidate.exists() and candidate.is_file():
+            return candidate.as_uri()
+
+    return asset_url
+
+
+def _localize_report_asset_urls(markdown_text: str, report_path: Path) -> str:
+    def _replace_md_image(match: re.Match) -> str:
+        alt_text, url = match.groups()
+        return f"![{alt_text}]({_resolve_report_asset_url(url, report_path)})"
+
+    def _replace_html_image(match: re.Match) -> str:
+        prefix, url, suffix = match.groups()
+        return f"{prefix}{_resolve_report_asset_url(url, report_path)}{suffix}"
+
+    markdown_text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _replace_md_image, markdown_text)
+    markdown_text = re.sub(
+        r'(<img[^>]+src=["\'])([^"\']+)(["\'])',
+        _replace_html_image,
+        markdown_text,
+        flags=re.IGNORECASE,
+    )
+    return markdown_text
+
+
+def _protect_markdown_code_regions(markdown_text: str) -> tuple[str, dict[str, str]]:
+    placeholders: dict[str, str] = {}
+    counter = 0
+
+    def _stash(value: str, prefix: str) -> str:
+        nonlocal counter
+        key = f"%%{prefix}_{counter}%%"
+        counter += 1
+        placeholders[key] = value
+        return key
+
+    lines = markdown_text.split("\n")
+    output: list[str] = []
+    fence_buffer: list[str] = []
+    in_fence = False
+    fence_char = ""
+
+    for line in lines:
+        fence_match = re.match(r"^(\s*)(`{3,}|~{3,})", line)
+        if fence_match:
+            token_char = fence_match.group(2)[0]
+            if not in_fence:
+                in_fence = True
+                fence_char = token_char
+                fence_buffer = [line]
+                continue
+            if token_char == fence_char:
+                fence_buffer.append(line)
+                output.append(_stash("\n".join(fence_buffer), "FENCE"))
+                in_fence = False
+                fence_char = ""
+                fence_buffer = []
+                continue
+
+        if in_fence:
+            fence_buffer.append(line)
+            continue
+
+        output.append(line)
+
+    if fence_buffer:
+        output.extend(fence_buffer)
+
+    protected = "\n".join(output)
+    protected = re.sub(
+        r"`([^`\n]+)`",
+        lambda match: _stash(match.group(0), "INLINE_CODE"),
+        protected,
+    )
+    return protected, placeholders
+
+
+def _restore_markdown_placeholders(text: str, placeholders: dict[str, str]) -> str:
+    restored = text
+    for key, value in placeholders.items():
+        restored = restored.replace(key, value)
+    return restored
+
+
+def _convert_latex_to_mathml(markdown_text: str) -> str:
+    try:
+        import latex2mathml.converter as l2m
+    except ImportError:
+        return markdown_text
+
+    protected, placeholders = _protect_markdown_code_regions(markdown_text)
+
+    def _convert_display(match: re.Match) -> str:
+        latex = match.group(1).strip()
+        try:
+            mathml = l2m.convert(latex).replace('display="inline"', 'display="block"')
+            return f'<div class="math-block">{mathml}</div>'
+        except Exception:
+            return match.group(0)
+
+    def _convert_inline(match: re.Match) -> str:
+        latex = match.group(1).strip()
+        try:
+            mathml = l2m.convert(latex)
+            return f'<span class="math-inline">{mathml}</span>'
+        except Exception:
+            return match.group(0)
+
+    protected = re.sub(r"\$\$([\s\S]+?)\$\$", _convert_display, protected)
+    protected = re.sub(r"\\\[([\s\S]+?)\\\]", _convert_display, protected)
+    protected = re.sub(r"\\\((.+?)\\\)", _convert_inline, protected)
+    protected = re.sub(r"(?<!\$)\$(?!\$)([^\n$]+?)(?<!\$)\$(?!\$)", _convert_inline, protected)
+    return _restore_markdown_placeholders(protected, placeholders)
+
+
+def _render_latex_with_katex(markdown_text: str) -> str:
+    if not KATEX_RENDER_SCRIPT.exists():
+        return _convert_latex_to_mathml(markdown_text)
+
+    protected, placeholders = _protect_markdown_code_regions(markdown_text)
+    expressions: list[dict[str, object]] = []
+
+    def _stash_math(match: re.Match, display_mode: bool) -> str:
+        expressions.append({
+            "latex": match.group(1).strip(),
+            "displayMode": display_mode,
+        })
+        return f"%%KATEX_{len(expressions) - 1}%%"
+
+    protected = re.sub(r"\$\$([\s\S]+?)\$\$", lambda m: _stash_math(m, True), protected)
+    protected = re.sub(r"\\\[([\s\S]+?)\\\]", lambda m: _stash_math(m, True), protected)
+    protected = re.sub(r"\\\((.+?)\\\)", lambda m: _stash_math(m, False), protected)
+    protected = re.sub(r"(?<!\$)\$(?!\$)([^\n$]+?)(?<!\$)\$(?!\$)", lambda m: _stash_math(m, False), protected)
+
+    if not expressions:
+        return _restore_markdown_placeholders(protected, placeholders)
+
+    try:
+        result = subprocess.run(
+            ["node", str(KATEX_RENDER_SCRIPT)],
+            input=json.dumps(expressions),
+            text=True,
+            capture_output=True,
+            cwd=str(Path(__file__).parent),
+            check=True,
+            timeout=30,
+        )
+        rendered_blocks = json.loads(result.stdout)
+    except Exception:
+        return _convert_latex_to_mathml(markdown_text)
+
+    for index, rendered_html in enumerate(rendered_blocks):
+        wrapper = (
+            f'<div class="math-block">{rendered_html}</div>'
+            if expressions[index]["displayMode"]
+            else f'<span class="math-inline">{rendered_html}</span>'
+        )
+        protected = protected.replace(f"%%KATEX_{index}%%", wrapper)
+
+    return _restore_markdown_placeholders(protected, placeholders)
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -229,6 +472,12 @@ def move_to_topic_folder(image_path: str, topic: str) -> str:
     
     # Generate unique filename if exists
     dest = topic_folder / source.name
+    try:
+        if source.resolve() == dest.resolve():
+            return str(dest)
+    except FileNotFoundError:
+        pass
+
     counter = 1
     while dest.exists():
         stem = source.stem
@@ -248,21 +497,25 @@ def move_to_topic_folder(image_path: str, topic: str) -> str:
 def _build_image_url_for_report(session_id: str, source: str, image_path: str, topic: str) -> Optional[str]:
     image_file = Path(image_path)
     encoded_name = urlquote(image_file.name)
-
-    if source in {"folder", "folder_selected"}:
+    try:
+        rel = image_file.resolve().relative_to(QUESTIONS_DIR.resolve())
         topic_query = ""
-        try:
-            rel = image_file.resolve().relative_to(QUESTIONS_DIR.resolve())
-            if len(rel.parts) > 1:
-                topic_query = f"?topic={urlquote(rel.parts[0])}"
-        except ValueError:
+        if len(rel.parts) > 1:
+            topic_query = f"?topic={urlquote(rel.parts[0])}"
+        else:
             normalized_topic = _normalize_topic_name(topic)
             if normalized_topic and normalized_topic != "Genel":
                 topic_query = f"?topic={urlquote(normalized_topic)}"
         return f"/api/image/{encoded_name}{topic_query}"
+    except ValueError:
+        pass
 
-    safe_session_id = _safe_session_id(session_id)
-    return f"/api/session-image/{urlquote(safe_session_id)}/{encoded_name}"
+    try:
+        image_file.resolve().relative_to(UPLOAD_DIR.resolve())
+        safe_session_id = _safe_session_id(session_id)
+        return f"/api/session-image/{urlquote(safe_session_id)}/{encoded_name}"
+    except ValueError:
+        return None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -421,31 +674,7 @@ async def solve_selected(request: SelectedFilesRequest):
 @app.get("/api/image/{filename}")
 async def get_image(filename: str, topic: str = None):
     """Serve image from questions folder or topic subfolders"""
-    safe_filename = _safe_basename(filename, "filename")
-    file_path = None
-    
-    # First check if topic is specified
-    if topic:
-        safe_topic = _safe_topic_segment(topic)
-        topic_path = (QUESTIONS_DIR / safe_topic / safe_filename).resolve()
-        if _is_within_base(topic_path, QUESTIONS_DIR) and topic_path.exists() and topic_path.is_file():
-            file_path = topic_path
-    
-    # Check root folder
-    if not file_path:
-        root_path = (QUESTIONS_DIR / safe_filename).resolve()
-        if _is_within_base(root_path, QUESTIONS_DIR) and root_path.exists() and root_path.is_file():
-            file_path = root_path
-    
-    # Search in all topic subfolders
-    if not file_path:
-        for subfolder in QUESTIONS_DIR.iterdir():
-            if subfolder.is_dir():
-                sub_path = (subfolder / safe_filename).resolve()
-                if _is_within_base(sub_path, QUESTIONS_DIR) and sub_path.exists() and sub_path.is_file():
-                    file_path = sub_path
-                    break
-    
+    file_path = _resolve_question_image_path(filename, topic)
     if not file_path:
         raise HTTPException(status_code=404, detail="Image not found")
     
@@ -460,20 +689,8 @@ async def get_image(filename: str, topic: str = None):
 @app.get("/api/session-image/{session_id}/{filename}")
 async def get_session_image(session_id: str, filename: str):
     """Serve uploaded image from a session folder safely"""
-    safe_session_id = _safe_session_id(session_id)
-    safe_filename = _safe_basename(filename, "filename")
-
-    session_dir = (UPLOAD_DIR / safe_session_id).resolve()
-    if not _is_within_base(session_dir, UPLOAD_DIR) or not session_dir.exists() or not session_dir.is_dir():
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    image_path = (session_dir / safe_filename).resolve()
-    if (
-        not _is_within_base(image_path, session_dir)
-        or not image_path.exists()
-        or not image_path.is_file()
-        or image_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES
-    ):
+    image_path = _resolve_session_image_path(session_id, filename)
+    if not image_path:
         raise HTTPException(status_code=404, detail="Image not found")
 
     from fastapi.responses import FileResponse
@@ -622,49 +839,12 @@ async def get_report_pdf(filename: str):
         )
     
     # Read markdown content
-    md_content = file_path.read_text(encoding="utf-8")
-    
-    # Pre-process LaTeX expressions → MathML for PDF rendering
-    import re as _re2
-    try:
-        import latex2mathml.converter as l2m
-        
-        def _latex_to_mathml(md_text: str) -> str:
-            """Convert LaTeX math expressions to MathML so WeasyPrint can render them."""
-            # Display math: $$...$$ and \[...\]
-            def _convert_display(m):
-                latex = m.group(1).strip()
-                try:
-                    mathml = l2m.convert(latex)
-                    # Force display mode
-                    mathml = mathml.replace('display="inline"', 'display="block"')
-                    return f'<div class="math-block">{mathml}</div>'
-                except Exception:
-                    return m.group(0)
-            
-            # Inline math: $...$ and \(...\)
-            def _convert_inline(m):
-                latex = m.group(1).strip()
-                try:
-                    mathml = l2m.convert(latex)
-                    return f'<span class="math-inline">{mathml}</span>'
-                except Exception:
-                    return m.group(0)
-            
-            # Order matters: process $$ before $
-            md_text = _re2.sub(r'\$\$(.+?)\$\$', _convert_display, md_text, flags=_re2.DOTALL)
-            md_text = _re2.sub(r'\\\[(.+?)\\\]', _convert_display, md_text, flags=_re2.DOTALL)
-            md_text = _re2.sub(r'\\\((.+?)\\\)', _convert_inline, md_text, flags=_re2.DOTALL)
-            # Single $ inline – avoid matching currency like $5
-            md_text = _re2.sub(r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)', _convert_inline, md_text, flags=_re2.DOTALL)
-            return md_text
-        
-        md_content = _latex_to_mathml(md_content)
-    except ImportError:
-        pass  # latex2mathml not installed, skip conversion
+    md_content = normalize_markdown(file_path.read_text(encoding="utf-8"))
+    md_content = _localize_report_asset_urls(md_content, file_path)
+    md_content = _render_latex_with_katex(md_content)
     
     # Convert markdown to HTML
-    md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc'])
+    md = markdown.Markdown(extensions=["extra", "nl2br", "sane_lists", "toc"])
     html_body = md.convert(md_content)
     
     # Extract stats from content for cover page
@@ -686,23 +866,21 @@ async def get_report_pdf(filename: str):
     <head>
         <meta charset="UTF-8">
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-            
             @page {{
                 size: A4;
                 margin: 2.5cm 2cm;
                 @bottom-center {{
                     content: counter(page) " / " counter(pages);
-                    font-family: 'Inter', sans-serif;
-                    font-size: 10px;
-                    color: #9ca3af;
-                }}
-                @top-right {{
-                    content: "Gemini Question Solver";
-                    font-family: 'Inter', sans-serif;
-                    font-size: 9px;
-                    color: #c7d2fe;
-                }}
+                font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                font-size: 10px;
+                color: #9ca3af;
+            }}
+            @top-right {{
+                content: "Gemini Question Solver";
+                font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                font-size: 9px;
+                color: #c7d2fe;
+            }}
             }}
             
             @page :first {{
@@ -712,7 +890,7 @@ async def get_report_pdf(filename: str):
             }}
             
             body {{
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
                 line-height: 1.8;
                 color: #1a1a2e;
                 background: #ffffff;
@@ -838,10 +1016,36 @@ async def get_report_pdf(filename: str):
                 margin-top: 24px;
                 page-break-after: avoid;
             }}
+
+            h3[id^="soru-"] {{
+                margin-top: 40px;
+                padding: 14px 18px;
+                border: 1px solid #dbeafe;
+                border-radius: 12px;
+                background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            }}
+
+            h4 {{
+                font-size: 16px;
+                color: #1d4ed8;
+                margin-top: 20px;
+                page-break-after: avoid;
+            }}
             
             p {{
                 margin-bottom: 16px;
                 text-align: justify;
+            }}
+
+            img {{
+                display: block;
+                max-width: 100%;
+                height: auto;
+                margin: 20px auto 24px;
+                border-radius: 14px;
+                border: 1px solid #e5e7eb;
+                box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+                page-break-inside: avoid;
             }}
             
             code {{
@@ -850,6 +1054,7 @@ async def get_report_pdf(filename: str):
                 border-radius: 4px;
                 font-family: 'Monaco', 'Consolas', monospace;
                 font-size: 14px;
+                overflow-wrap: anywhere;
             }}
             
             pre {{
@@ -860,6 +1065,8 @@ async def get_report_pdf(filename: str):
                 overflow-x: auto;
                 font-size: 13px;
                 page-break-inside: avoid;
+                white-space: pre-wrap;
+                word-break: break-word;
             }}
             
             pre code {{
@@ -918,6 +1125,14 @@ async def get_report_pdf(filename: str):
             .math-inline {{
                 display: inline;
                 vertical-align: middle;
+            }}
+
+            .katex {{
+                font-size: 1.05em;
+            }}
+
+            .math-block .katex-display {{
+                margin: 0;
             }}
             
             math {{
@@ -984,15 +1199,22 @@ async def get_report_pdf(filename: str):
     '''
     
     # Generate PDF
-    pdf_buffer = BytesIO()
-    HTML(string=html_template).write_pdf(pdf_buffer)
-    pdf_buffer.seek(0)
+    def _render_pdf_bytes() -> bytes:
+        pdf_buffer = BytesIO()
+        stylesheets = [CSS(filename=str(KATEX_CSS_PATH))] if KATEX_CSS_PATH.exists() else None
+        HTML(string=html_template, base_url=str(file_path.parent)).write_pdf(
+            pdf_buffer,
+            stylesheets=stylesheets,
+        )
+        return pdf_buffer.getvalue()
+
+    pdf_bytes = await asyncio.to_thread(_render_pdf_bytes)
     
     pdf_filename = file_path.name.replace('.md', '.pdf')
     
     from fastapi.responses import Response
     return Response(
-        content=pdf_buffer.getvalue(),
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"attachment; filename={pdf_filename}"
@@ -1038,6 +1260,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
         "results": [],
         "progress": 0,
         "total": len(uploaded_files),
+        "source": "upload",
         "created_at": datetime.now().isoformat()
     }
     
@@ -1170,8 +1393,9 @@ async def process_session(session_id: str):
             result["topic"] = topic
             new_image_path = image_path
             
-            # Move successful questions to topic folder (only for folder source)
-            if result["success"] and session.get("source") in ["folder", "folder_selected"]:
+            # Store successful questions under their detected topic, regardless of
+            # whether they came from the root question folder or an upload session.
+            if result["success"] and session.get("source") in ["folder", "folder_selected", "upload", "web"]:
                 new_image_path = move_to_topic_folder(image_path, topic)
 
             stored_filename = Path(new_image_path).name
