@@ -1940,6 +1940,63 @@ async def retry_all_failed():
     }
 
 
+@app.post("/api/questions/reclassify-all")
+async def reclassify_all_questions():
+    """Re-classify all solved questions using updated TOPIC_PATTERNS.
+    
+    Re-runs detect_topic on every successful question's solution text,
+    updates the DB record, and moves the image file to the new topic folder.
+    """
+    from src.gemini_client import detect_topic
+
+    questions = db.get_questions(status="success", archived=False, limit=10000)
+    archived_qs = db.get_questions(status="success", archived=True, limit=10000)
+    all_qs = questions + archived_qs
+
+    if not all_qs:
+        return {"message": "Sınıflandırılacak soru bulunamadı", "changed": 0, "total": 0}
+
+    changed = 0
+    details = []
+
+    for q in all_qs:
+        solution = q.get("solution") or ""
+        if not solution:
+            continue
+
+        new_topic, new_subtopic = detect_topic(solution)
+        new_topic = _normalize_topic_name(new_topic)
+        old_topic = q.get("topic") or "Genel"
+
+        topic_changed = new_topic != old_topic
+
+        # Update DB regardless (subtopic may change too)
+        db.update_question(q["id"], topic=new_topic, subtopic=new_subtopic)
+
+        # Move image file to new topic folder if topic changed
+        if topic_changed:
+            image_path = q.get("image_path", "")
+            if image_path:
+                new_image_path = move_to_topic_folder(image_path, new_topic)
+                if new_image_path != image_path:
+                    db.update_question(q["id"], image_path=new_image_path, filename=Path(new_image_path).name)
+
+            changed += 1
+            details.append({
+                "id": q["id"],
+                "filename": q.get("filename"),
+                "old_topic": old_topic,
+                "new_topic": new_topic,
+            })
+
+    return {
+        "message": f"{changed} soru yeniden sınıflandırıldı",
+        "changed": changed,
+        "total": len(all_qs),
+        "details": details[:50],  # limit response size
+    }
+
+
 async def process_retry_session(session_id: str):
     """Process retry session"""
     session = active_sessions[session_id]

@@ -13,6 +13,7 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
   const [filterTopic, setFilterTopic] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const [retrying, setRetrying] = useState(null);
+  const [reclassifying, setReclassifying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,6 +111,24 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
       load();
     } catch (err) {
       toast.error(err.message);
+    }
+  };
+
+  const handleReclassify = async () => {
+    if (!confirm('Tüm soruları güncel konu kalıplarına göre yeniden sınıflandırmak istediğinize emin misiniz?')) return;
+    setReclassifying(true);
+    try {
+      const data = await api.reclassifyAll();
+      if (data.changed > 0) {
+        toast.success(`${data.changed}/${data.total} soru yeniden sınıflandırıldı`);
+      } else {
+        toast.success(`Tüm sorular zaten doğru sınıflandırılmış (${data.total} soru kontrol edildi)`);
+      }
+      load();
+    } catch (err) {
+      toast.error(err.message || 'Yeniden sınıflandırma başarısız');
+    } finally {
+      setReclassifying(false);
     }
   };
 
@@ -233,6 +252,13 @@ export default function HistoryMode({ onViewQuestion, onStartSolving, processing
           )}
           <button onClick={handleArchive} className="btn btn-secondary" style={{ padding: '10px 16px', fontSize: '0.85rem' }}>
             {'\uD83D\uDCE6'} Basarilari Arsivle
+          </button>
+          <button onClick={handleReclassify} disabled={reclassifying} className="btn btn-secondary" style={{ padding: '10px 16px', fontSize: '0.85rem' }}>
+            {reclassifying ? (
+              <><span className="spinner-ring" style={{ display: 'inline-block', width: 14, height: 14, marginRight: 6 }} />Sınıflandırılıyor...</>
+            ) : (
+              <>{'\uD83D\uDD00'} Yeniden Sınıfla</>
+            )}
           </button>
           <button onClick={handleDeleteAll} className="btn btn-danger" style={{ padding: '10px 16px', fontSize: '0.85rem' }}>
             {'\uD83D\uDDD1\uFE0F'} Tumunu Sil
